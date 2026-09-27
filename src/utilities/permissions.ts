@@ -135,6 +135,8 @@ const functionQueryMap: Record<QueryString, FunctionString> = {
   [Queries.DENY_MERGE]: 'deny_merge',
   [Queries.DUPLICATE_PLAN]: 'branch_plan',
   [Queries.EXPAND_ALL_TEMPLATES]: 'expand_all_templates',
+  [Queries.GENERATE_SEQUENCE]: 'generate_sequence',
+  [Queries.GENERATE_SEQUENCE_PREFLIGHT]: 'generate_sequence',
   [Queries.APPLY_ACTIVITIES_BY_FILTER]: 'assign_activities_by_filter',
   [Queries.GET_CONFLICTING_ACTIVITIES]: 'get_conflicting_activities',
   [Queries.GET_NON_CONFLICTING_ACTIVITIES]: 'get_non_conflicting_activities',
@@ -768,6 +770,14 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
     const queries = [Queries.EXPAND_ALL_TEMPLATES];
     return isUserAdmin(user) || (getPermission(queries, user) && getRolePlanPermission(queries, user, plan, model));
   },
+  GENERATE_SEQUENCE: (user: User | null, plan: PlanWithOwners, model: ModelWithOwner | null): boolean => {
+    const queries = [Queries.GENERATE_SEQUENCE];
+    return isUserAdmin(user) || (getPermission(queries, user) && getRolePlanPermission(queries, user, plan, model));
+  },
+  GENERATE_SEQUENCE_PREFLIGHT: (user: User | null, plan: PlanWithOwners, model: ModelWithOwner | null): boolean => {
+    const queries = [Queries.GENERATE_SEQUENCE_PREFLIGHT];
+    return isUserAdmin(user) || (getPermission(queries, user) && getRolePlanPermission(queries, user, plan, model));
+  },
   GET_ACTIVITY_DIRECTIVE_CHANGELOG: () => true,
   GET_CONSTRAINT_PROCEDURE_EFFECTIVE_ARGUMENTS_BULK: () => true,
   GET_EFFECTIVE_ACTIVITY_ARGUMENTS_BULK: () => true,
@@ -780,6 +790,7 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   GET_EXTERNAL_EVENT_TYPE_BY_SOURCE: user => queryPermissions.SUB_DERIVATION_GROUPS(user),
   GET_EXTERNAL_PROFILE_SEGMENTS_SINCE: () => true,
   GET_EXTERNAL_SOURCE_EXTERNAL_EVENT_COUNT: () => true,
+  GET_GENERATED_PRODUCT: () => true,
   GET_MODELS: () => true,
   GET_PARCEL: () => true,
   GET_PARSED_CHANNEL_DICTIONARY: () => true,
@@ -804,6 +815,7 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   GET_SCHEDULING_SPEC_CONDITIONS_FOR_CONDITION: () => true,
   GET_SCHEDULING_SPEC_GOALS_FOR_GOAL: () => true,
   GET_SEQUENCE_ADAPTATION: () => true,
+  GET_SEQUENCE_GENERATION: () => true,
   GET_SIMULATION_DATASET_ID: () => true,
   GET_SPANS: () => true,
   GET_TYPESCRIPT_CONSTRAINTS: () => true,
@@ -1007,6 +1019,7 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   SUB_SCHEDULING_REQUESTS: () => true,
   SUB_SEQUENCE_ADAPTATIONS: () => true,
   SUB_SEQUENCE_FILTERS: () => true,
+  SUB_SEQUENCE_GENERATIONS: () => true,
   SUB_SEQUENCE_TEMPLATES: () => true,
   SUB_SIMULATION: (user: User | null): boolean => {
     return isUserAdmin(user) || getPermission([Queries.SIMULATIONS], user);
@@ -1499,6 +1512,11 @@ interface SchedulingCRUDPermission<T = null> extends RunnableSpecificationCRUDPe
   canAnalyze: (user: User | null, plan: PlanWithOwners, model: ModelWithOwner | null) => boolean;
 }
 
+interface SequenceGenerationPermission {
+  canGenerate: RolePlanPermissionCheck;
+  canRead: () => boolean;
+}
+
 interface SequenceTemplateCRUDPermission<T = null> extends CRUDPermission<T> {
   canExpand: RolePlanPermissionCheck;
   canImport: CreatePermissionCheck;
@@ -1565,6 +1583,7 @@ interface FeaturePermissions {
   schedulingGoalsPlanSpec: SchedulingCRUDPermission<AssetWithOwner<SchedulingGoalMetadata>>;
   sequenceAdaptation: CRUDPermission<void>;
   sequenceFilter: CRUDPermission<Model>;
+  sequenceGeneration: SequenceGenerationPermission;
   sequenceTemplate: SequenceTemplateCRUDPermission<SequenceTemplate>;
   sequences: CRUDPermission<AssetWithOwner<UserSequence>>;
   simulation: RunnableCRUDPermission<AssetWithOwner<Simulation>>;
@@ -1787,6 +1806,10 @@ const featurePermissions: FeaturePermissions = {
     canDelete: user => queryPermissions.DELETE_SEQUENCE_FILTERS(user),
     canRead: () => true,
     canUpdate: (user, model) => queryPermissions.UPDATE_SEQUENCE_FILTER(user, model),
+  },
+  sequenceGeneration: {
+    canGenerate: (user, plan, model) => queryPermissions.GENERATE_SEQUENCE(user, plan, model),
+    canRead: () => true,
   },
   sequenceTemplate: {
     canCreate: user => queryPermissions.CREATE_SEQUENCE_TEMPLATE(user),

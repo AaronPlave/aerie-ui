@@ -13,6 +13,7 @@
   import type { SpansMap, SpanUtilityMaps } from '../../types/simulation';
   import { copyActivityDirectivesToClipboard } from '../../utilities/activities';
   import effects from '../../utilities/effects';
+  import { showGenerateSequenceModal, showSequenceGenerationModal } from '../../utilities/modal';
   import { featurePermissions } from '../../utilities/permissions';
   import ActivityErrorsRollup from '../ui/ActivityErrorsRollup.svelte';
   import BulkActionDataGrid from '../ui/DataGrid/BulkActionDataGrid.svelte';
@@ -63,6 +64,7 @@
   let completeColumnDefs: ColDef[] = columnDefs;
   let hasCreatePermission: boolean = false;
   let hasDeletePermission: boolean = false;
+  let hasGenerateSequencePermission: boolean = false;
   let isDeletingDirective: boolean = false;
   let permissionErrorText: string | null = null;
 
@@ -71,6 +73,9 @@
 
   $: hasCreatePermission =
     plan !== null ? featurePermissions.activityDirective.canCreate(user, plan) && !planReadOnly : false;
+
+  $: hasGenerateSequencePermission =
+    plan !== null ? featurePermissions.sequenceGeneration.canGenerate(user, plan, plan.model) : false;
 
   $: activityDirectivesWithErrorCounts = (activityDirectives || []).map(activityDirective => ({
     ...activityDirective,
@@ -186,6 +191,18 @@
     }
   }
 
+  async function generateSequenceFromSelection() {
+    if (plan === null) {
+      return;
+    }
+    const result = await showGenerateSequenceModal(plan, user, {
+      initialDirectiveIds: [...bulkSelectedActivityDirectiveIds],
+    });
+    if (result.confirm && result.value) {
+      await showSequenceGenerationModal(result.value.generationId, plan, user);
+    }
+  }
+
   async function bulkShiftItems() {
     const selectedIdSet = new Set(bulkSelectedActivityDirectiveIds);
     const selectedActivityDirectives = activityDirectives?.filter(ad => selectedIdSet.has(ad.id)) ?? [];
@@ -293,6 +310,13 @@
       on:createActivityDirectives={createActivityDirectives}
     />
     <ContextMenu.Separator />
+    {#if bulkSelectedActivityDirectiveIds.length > 0 && hasGenerateSequencePermission}
+      <ContextMenu.Item size="sm" on:click={generateSequenceFromSelection}>
+        Generate Sequence from {bulkSelectedActivityDirectiveIds.length}
+        {bulkSelectedActivityDirectiveIds.length > 1 ? pluralItemDisplayText : singleItemDisplayText}
+      </ContextMenu.Item>
+      <ContextMenu.Separator />
+    {/if}
   </svelte:fragment>
 
   <svelte:fragment slot="context-menu-bottom">

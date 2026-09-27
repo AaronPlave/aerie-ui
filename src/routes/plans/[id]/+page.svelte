@@ -72,8 +72,9 @@
     uncheckedConstraintCount,
   } from '../../../stores/constraints';
   import { directiveBuilderIsVisible, resetDirectiveBuilder } from '../../../stores/directiveBuilder';
-  import { resetExpansionStores, expansionSequences } from '../../../stores/expansion';
-  import { sequenceTemplateExpansionStatus, resetSequenceTemplateStores } from '../../../stores/sequence-template';
+  import { resetExpansionStores } from '../../../stores/expansion';
+  import { latestSequenceGeneration, resetSequenceGenerationStores } from '../../../stores/sequence-generation';
+  import { resetSequenceTemplateStores } from '../../../stores/sequence-template';
   import { extensions } from '../../../stores/extensions';
   import { externalEventTypes } from '../../../stores/external-event';
   import { resetExternalSourceStores } from '../../../stores/external-source';
@@ -109,7 +110,6 @@
     schedulingAnalysisStatus,
     schedulingGoalCount,
   } from '../../../stores/scheduling';
-  import { lastTemplatedSimulationDatasetId } from '../../../stores/sequence-template';
   import {
     enableSimulation,
     externalResourceNames,
@@ -143,7 +143,8 @@
   import { getConstraintStatus } from '../../../utilities/constraint';
   import effects from '../../../utilities/effects';
   import { isSaveEvent } from '../../../utilities/keyboardEvents';
-  import { closeActiveModal } from '../../../utilities/modal';
+  import { closeActiveModal, showGenerateSequenceModal, showSequenceGenerationModal } from '../../../utilities/modal';
+  import { getSequenceGenerationStatus } from '../../../utilities/sequence-generation';
   import { getModelStatusRollup } from '../../../utilities/model';
   import { featurePermissions } from '../../../utilities/permissions';
   import {
@@ -186,7 +187,7 @@
   let constraintsStatusText: string | undefined;
   let hasCreateViewPermission: boolean = false;
   let hasUpdateViewPermission: boolean = false;
-  let hasExpandPermission: boolean = false;
+  let hasGenerateSequencePermission: boolean = false;
   let hasScheduleAnalysisPermission: boolean = false;
   let hasSimulatePermission: boolean = false;
   let hasCheckConstraintsPermission: boolean = false;
@@ -197,8 +198,6 @@
   let windowWidth = 1600;
   let simulationDataAbortController: AbortController;
   let schedulingStatusText: string = '';
-  let lastSimulationDatasetId: number | null = null;
-  let latestExpansionSequenceIds: string[] = [];
   let consolePaneApi: PaneAPI;
   let isConsoleExpanded: boolean = false;
   let selectedConsoleTab: PlanConsoleTab = 'all';
@@ -278,8 +277,8 @@
   $: if ($initialPlan && $initialPlan.model) {
     hasCheckConstraintsPermission =
       featurePermissions.constraintRuns.canCreate($user, $initialPlan, $initialPlan.model) && !$planReadOnly;
-    hasExpandPermission =
-      featurePermissions.sequenceTemplate.canExpand($user, $initialPlan, $initialPlan.model) && !$planReadOnly;
+    hasGenerateSequencePermission =
+      featurePermissions.sequenceGeneration.canGenerate($user, $initialPlan, $initialPlan.model) && !$planReadOnly;
     hasScheduleAnalysisPermission =
       featurePermissions.schedulingGoalsPlanSpec.canAnalyze($user, $initialPlan, $initialPlan.model) && !$planReadOnly;
     hasSimulatePermission =
@@ -497,14 +496,6 @@
       modelErrorCount += 1;
     }
   }
-  $: lastSimulationDatasetId = $lastTemplatedSimulationDatasetId;
-
-  $: latestExpansionSequenceIds =
-    $simulationDatasetLatest === null
-      ? []
-      : $expansionSequences
-          .filter(sequence => sequence.simulation_dataset_id === $simulationDatasetLatest.id)
-          .map(sequence => sequence.seq_id);
 
   onDestroy(() => {
     resetActivityStores();
@@ -513,6 +504,7 @@
     resetConstraintStores();
     resetPlanSchedulingStores();
     resetExpansionStores();
+    resetSequenceGenerationStores();
     resetSequenceTemplateStores();
     resetPlanStores();
     resetPlanSnapshotStores();
@@ -607,9 +599,12 @@
     }
   }
 
-  async function onHandleExpansion() {
-    if ($plan !== null && $simulationDatasetLatest !== null && latestExpansionSequenceIds.length > 0) {
-      await effects.expandTemplates(latestExpansionSequenceIds, $simulationDatasetLatest.id, $plan, $user);
+  async function onGenerateSequence() {
+    if ($plan !== null) {
+      const result = await showGenerateSequenceModal($plan, $user);
+      if (result.confirm && result.value) {
+        await showSequenceGenerationModal(result.value.generationId, $plan, $user);
+      }
     }
   }
 
@@ -810,23 +805,28 @@
               }}
             />
             <PlanNavButton
-              title={!compactNavMode ? 'Expansion' : ''}
-              buttonText="Expand All Sequences"
-              hasPermission={hasExpandPermission}
+              title={!compactNavMode ? 'Sequences' : ''}
+              buttonText="Generate Sequence"
+              hasPermission={hasGenerateSequencePermission}
               permissionError={$planReadOnly
                 ? PlanStatusMessages.READ_ONLY
-                : 'You do not have permission to expand sequences'}
-              menuTitle="Template Expansion Status"
-              disabled={$simulationDatasetLatest === null || latestExpansionSequenceIds.length === 0}
-              status={$sequenceTemplateExpansionStatus}
-              on:click={() => onHandleExpansion()}
+                : 'You do not have permission to generate sequences'}
+              menuTitle="Sequence Generation"
+              disabled={$simulationDatasetLatest === null}
+              status={getSequenceGenerationStatus($latestSequenceGeneration?.status)}
+              on:click={() => onGenerateSequence()}
             >
               <ChevronsLeftRight size={20} />
               <svelte:fragment slot="metadata">
-                {#if !lastSimulationDatasetId}
-                  <div>No expansions exist yet.</div>
+                {#if $latestSequenceGeneration === null}
+                  <div>No sequences generated yet.</div>
                 {:else}
-                  <div>Last expanded for simulation ID: {lastSimulationDatasetId}</div>
+                  <div>
+                    Latest: {$latestSequenceGeneration.requested_seq_id} (generation {$latestSequenceGeneration.id})
+                  </div>
+                  {#if $latestSequenceGeneration.simulation_dataset_id !== null}
+                    <div>From simulation ID: {$latestSequenceGeneration.simulation_dataset_id}</div>
+                  {/if}
                 {/if}
               </svelte:fragment>
             </PlanNavButton>

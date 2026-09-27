@@ -11,6 +11,7 @@
     ChevronDown,
     ChevronsLeftRight,
     Clipboard,
+    FileCode2,
     FlipHorizontal2,
     LucideEdit,
     PlaySquare,
@@ -84,7 +85,7 @@
       on:click={() => onClickMenuItem('ExpansionPanel')}
     >
       <ChevronsLeftRight size={16} />
-      Expansion
+      Expansion (Legacy)
     </DropdownMenu.Item>
     <DropdownMenu.Item
       class="flex cursor-pointer select-none items-center gap-2 rounded-sm py-2.5 text-[13px] font-medium"
@@ -141,6 +142,13 @@
     >
       <Box size={16} />
       Selected External Event
+    </DropdownMenu.Item>
+    <DropdownMenu.Item
+      class="flex cursor-pointer select-none items-center gap-2 rounded-sm py-2.5 text-[13px] font-medium"
+      on:click={() => onClickMenuItem('SequencesPanel')}
+    >
+      <FileCode2 size={16} />
+      Sequences
     </DropdownMenu.Item>
     <DropdownMenu.Item
       class="flex cursor-pointer select-none items-center gap-2 rounded-sm py-2.5 text-[13px] font-medium"

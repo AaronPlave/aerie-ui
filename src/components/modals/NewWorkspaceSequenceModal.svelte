@@ -17,11 +17,12 @@
   export let currentWorkspace: Workspace | null | undefined = null;
   export let currentWorkspaceContents: WorkspaceTreeNode | null;
   export let height: number = 500;
+  export let initialFileName: string = '';
   export let width: number = 380;
   export let startingPath: string = '';
 
   let filePath: string = joinPath([currentWorkspace?.name ?? '', startingPath]);
-  let fileName: string = '';
+  let fileName: string = initialFileName;
 
   const dispatch = createEventDispatcher<{
     close: void;

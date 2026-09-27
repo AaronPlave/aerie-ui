@@ -1113,6 +1113,49 @@ const gql = {
     }
   `,
 
+  GENERATE_SEQUENCE: `#graphql
+    mutation GenerateSequence(
+      $planId: Int!
+      $simulationDatasetId: Int
+      $sequenceId: String!
+      $selection: GenerateSequenceSelection!
+      $metadata: json
+    ) {
+      generateSequence: ${Queries.GENERATE_SEQUENCE}(
+        planId: $planId
+        simulationDatasetId: $simulationDatasetId
+        sequenceId: $sequenceId
+        selection: $selection
+        metadata: $metadata
+      ) {
+        diagnostics
+        generatedProductIds
+        generationId
+        status
+      }
+    }
+  `,
+
+  GENERATE_SEQUENCE_PREFLIGHT: `#graphql
+    query GenerateSequencePreflight(
+      $planId: Int!
+      $simulationDatasetId: Int
+      $sequenceId: String!
+      $selection: GenerateSequenceSelection!
+    ) {
+      generateSequencePreflight: ${Queries.GENERATE_SEQUENCE_PREFLIGHT}(
+        planId: $planId
+        simulationDatasetId: $simulationDatasetId
+        sequenceId: $sequenceId
+        selection: $selection
+      ) {
+        diagnostics
+        expansion
+        ok
+        source
+      }
+    }
+  `,
   GET_ACTIVITY_DIRECTIVE_CHANGELOG: `#graphql
     query GetActivityDirectiveChangelog($activityId: Int!, $planId: Int!) {
       activityDirectiveRevisions: ${Queries.ACTIVITY_DIRECTIVE_CHANGELOG}(
@@ -1273,6 +1316,22 @@ const gql = {
     }
   `,
 
+  GET_GENERATED_PRODUCT: `#graphql
+    query GetGeneratedProduct($id: Int!) {
+      generatedProduct: ${Queries.GENERATED_PRODUCT_BY_PK}(id: $id) {
+        created_at
+        generation_id
+        id
+        language
+        metadata
+        output_hash
+        product_key
+        rendered_output
+        seq_id
+        source_blocks
+      }
+    }
+  `,
   GET_MODELS: `#graphql
     query GetModels {
       models: ${Queries.MISSION_MODELS} {
@@ -1651,6 +1710,34 @@ const gql = {
     }
   `,
 
+  GET_SEQUENCE_GENERATION: `#graphql
+    query GetSequenceGeneration($id: Int!) {
+      sequenceGeneration: ${Queries.SEQUENCE_GENERATION_BY_PK}(id: $id) {
+        completed_at
+        diagnostics
+        error
+        expansion_snapshot
+        id
+        plan_id
+        products(order_by: { id: asc }) {
+          created_at
+          generation_id
+          id
+          language
+          output_hash
+          product_key
+          seq_id
+        }
+        request_snapshot
+        requested_at
+        requested_by
+        requested_seq_id
+        simulation_dataset_id
+        source_snapshot
+        status
+      }
+    }
+  `,
   GET_SIMULATION_DATASET_ID: `#graphql
     query GetSimulationDatasetId($datasetId: Int!) {
       ${Queries.SIMULATION_DATASETS}(where: {dataset_id: {_eq: $datasetId}}) {
@@ -3298,6 +3385,33 @@ const gql = {
     }
   `,
 
+  SUB_SEQUENCE_GENERATIONS: `#graphql
+    subscription SubSequenceGenerations($planId: Int!) {
+      sequenceGenerations: ${Queries.SEQUENCE_GENERATIONS}(where: { plan_id: { _eq: $planId } }, order_by: { id: desc }) {
+        completed_at
+        coverage: expansion_snapshot(path: "coverage")
+        diagnostics
+        error
+        id
+        plan_id
+        products(order_by: { id: asc }) {
+          created_at
+          generation_id
+          id
+          language
+          output_hash
+          product_key
+          seq_id
+        }
+        request_snapshot
+        requested_at
+        requested_by
+        requested_seq_id
+        simulation_dataset_id
+        status
+      }
+    }
+  `,
   SUB_SEQUENCE_TEMPLATES: `#graphql
     subscription SubSequenceTemplate {
       ${Queries.SEQUENCE_TEMPLATE}(order_by: { id: desc }) {

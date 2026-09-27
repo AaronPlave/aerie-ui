@@ -32,12 +32,12 @@ export class Plan {
   navButtonActivityCheckingMenu: Locator;
   navButtonConstraints: Locator;
   navButtonConstraintsMenu: Locator;
-  navButtonExpansion: Locator;
-  navButtonExpansionMenu: Locator;
   navButtonExtension: Locator;
   navButtonExtensionMenu: Locator;
   navButtonScheduling: Locator;
   navButtonSchedulingMenu: Locator;
+  navButtonSequences: Locator;
+  navButtonSequencesMenu: Locator;
   navButtonSimulation: Locator;
   navButtonSimulationMenu: Locator;
   navButtonSimulationMenuStatus: Locator;
@@ -49,6 +49,7 @@ export class Plan {
   panelPlanMetadata: Locator;
   panelSchedulingConditions: Locator;
   panelSchedulingGoals: Locator;
+  panelSequences: Locator;
   panelSimulatedActivitiesTable: Locator;
   panelSimulation: Locator;
   panelTimeline: Locator;
@@ -755,8 +756,8 @@ export class Plan {
     this.gridMenuItem = (name: string) => this.gridMenu.getByRole('menuitem', { exact: true, name });
     this.navButtonActivityChecking = page.locator(`.nav-button:has-text("Activities")`);
     this.navButtonActivityCheckingMenu = this.navButtonActivityChecking.getByRole('menu');
-    this.navButtonExpansion = page.locator(`.nav-button:has-text("Expansion")`);
-    this.navButtonExpansionMenu = this.navButtonExpansion.getByRole('menu');
+    this.navButtonSequences = page.locator(`.nav-button:has-text("Sequences")`);
+    this.navButtonSequencesMenu = this.navButtonSequences.getByRole('menu');
     this.navButtonExtension = page.locator(`.nav-button:has-text("Extensions")`);
     this.navButtonExtensionMenu = this.navButtonExtension.getByRole('menu');
     this.navButtonConstraints = page.locator(`.nav-button:has-text("Constraints")`);
@@ -772,6 +773,7 @@ export class Plan {
     this.panelActivityTypes = page.locator('[data-component-name="TimelineItemsPanel"]');
     this.panelConstraints = page.locator('[data-component-name="ConstraintsPanel"]');
     this.panelExpansion = page.locator('[data-component-name="ExpansionPanel"]');
+    this.panelSequences = page.locator('[data-component-name="SequencesPanel"]');
     this.panelPlanMetadata = page.locator('[data-component-name="PlanMetadataPanel"]');
     this.panelSchedulingConditions = page.locator('[data-component-name="SchedulingConditionsPanel"]');
     this.panelSchedulingGoals = page.locator('[data-component-name="SchedulingGoalsPanel"]');
@@ -877,12 +879,13 @@ export enum PanelNames {
   SIMULATED_ACTIVITIES_TABLE = 'Simulated Activities Table',
   TIMELINE_ITEMS = 'Activity, Resource, Event Types',
   CONSTRAINTS = 'Constraints',
-  EXPANSION = 'Expansion',
+  EXPANSION = 'Expansion (Legacy)',
   EXTERNAL_APPLICATION = 'External Application',
   PLAN_METADATA = 'Plan Metadata',
   SCHEDULING_GOALS = 'Scheduling Goals',
   SCHEDULING_CONDITIONS = 'Scheduling Conditions',
   SELECTED_ACTIVITY = 'Selected Activity',
+  SEQUENCES = 'Sequences',
   SIMULATION = 'Simulation',
   TIMELINE_EDITOR = 'Timeline Editor',
   EXTERNAL_SOURCES = 'External Sources',

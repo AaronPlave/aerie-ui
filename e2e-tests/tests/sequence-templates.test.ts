@@ -17,6 +17,7 @@ const sequenceTemplateName: string = uniqueNamesGenerator({ dictionaries: [adjec
 const sequenceTemplateContent: string = '/C Example_Command "ARG1"';
 const sequenceTemplateOutputContent: string = 'C Example_Command "ARG1"';
 const sequenceTemplateLanguage: string = 'SeqN';
+const generatedSequenceId: string = 'E2E_GENERATED';
 
 let setup: BrowserSetupResult;
 let appNav: AppNav;
@@ -100,16 +101,14 @@ test.describe.serial('Sequence Templates', () => {
     await plan.createSequenceFilter(sequenceFilterName);
     await plan.applySequenceFilter(sequenceFilterName, plans.planId);
 
-    // can expand either by clicking the "Expand Sequence" button on the sequence row in Expansion panel, or via the top nav
+    // can expand either by clicking the "Expand Sequence" button on the sequence row, or "Expand All" in the panel
     const expansionSequenceItem = setup.page.locator('.sne-items').getByText(`${sequenceFilterName} Sequence`);
     await expansionSequenceItem.hover();
     const expandSequenceButton = setup.page.getByLabel('Expand Sequence');
     await expect(expandSequenceButton).toBeVisible();
     await expect(expandSequenceButton).toBeEnabled();
 
-    const expansionNavButton = setup.page.locator('.nav-button').filter({ hasText: 'Expansion' });
-    await expansionNavButton.click();
-    const expandAllButton = setup.page.getByRole('button', { name: 'Expand All Sequences' });
+    const expandAllButton = setup.page.getByRole('button', { name: 'Expand All' });
     await expect(expandAllButton).toBeEnabled();
     await expandAllButton.click();
 
@@ -122,6 +121,36 @@ test.describe.serial('Sequence Templates', () => {
     await plan.sequenceExpansionOutputModal.waitFor({ state: 'visible' });
     await setup.page.getByText('Loading Editor...').waitFor({ state: 'detached' });
     await expect(plan.sequenceExpansionOutputModal.getByText(sequenceTemplateOutputContent)).toBeVisible();
+  });
+  test('Sequence can be generated from selected activities', async () => {
+    test.setTimeout(90000);
+    await plan.goto();
+    await plan.showPanel(PanelNames.SEQUENCES);
+    await setup.page.getByTestId('generate-sequence-button').click();
+
+    const modal = setup.page.getByTestId('generate-sequence-modal');
+    await expect(modal.getByTestId('generate-sequence-source')).toContainText('complete');
+    await modal.getByTestId('generate-sequence-activities').getByRole('checkbox').first().check();
+    await modal.locator('input[name="sequence-id"]').fill(generatedSequenceId);
+    await expect(modal.getByTestId('generate-sequence-coverage')).toContainText('1 / 1 supported');
+    await setup.page.getByTestId('generate-sequence-submit').click();
+
+    await expect(
+      setup.page.locator('.toastify').filter({ hasText: `Sequence "${generatedSequenceId}" Generated` }),
+    ).toBeVisible({ timeout: 30000 });
+    const details = setup.page.getByTestId('sequence-generation-details');
+    await details.waitFor({ state: 'visible' });
+    await setup.page.getByText('Loading Editor...').waitFor({ state: 'detached' });
+    await expect(details.getByText(sequenceTemplateOutputContent)).toBeVisible();
+    await setup.page.getByRole('button', { exact: true, name: 'Close' }).click();
+
+    const generation = setup.page.getByTestId('sequence-generation').filter({ hasText: generatedSequenceId }).first();
+    await expect(generation).toContainText('Generated');
+
+    const downloadPromise = setup.page.waitForEvent('download');
+    await generation.getByRole('button', { name: `Export '${generatedSequenceId}'` }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toEqual(`${generatedSequenceId}.seqN.txt`);
   });
   test('Delete a sequence template', async () => {
     await sequenceTemplates.goto();

@@ -1,3 +1,4 @@
+import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
 import { base } from '$app/paths';
 import { env } from '$env/dynamic/public';
@@ -58,6 +59,7 @@ import {
   selectedSchedulingSpecId as selectedSpecIdStore,
 } from '../stores/scheduling';
 import { sequenceAdaptations as sequenceAdaptationsStore } from '../stores/sequence-adaptation';
+import { generatingSequence as generatingSequenceStore } from '../stores/sequence-generation';
 import { sequenceTemplateExpansionError, sequenceTemplateExpansionStatus } from '../stores/sequence-template';
 import {
   channelDictionaries as channelDictionariesStore,
@@ -191,6 +193,14 @@ import type {
   SchedulingResponse,
 } from '../types/scheduling';
 import type { ValueSchema, ValueSchemaStruct } from '../types/schema';
+import type {
+  GeneratedProduct,
+  GeneratedProductSlim,
+  GenerateSequencePreflightResponse,
+  GenerateSequenceRequest,
+  GenerateSequenceResponse,
+  SequenceGeneration,
+} from '../types/sequence-generation';
 import type { SequenceTemplate } from '../types/sequence-template';
 import {
   type ChannelDictionaryMetadata,
@@ -291,6 +301,8 @@ import { featurePermissions, gatewayPermissions, queryPermissions } from './perm
 import { reqActionServer, reqExtension, reqGateway, reqHasura, WorkspaceSaveConflictError } from './requests';
 import { convertResponseToMetadata } from './scheduling';
 import { buildSearchActivitiesWhereClauses, type ActivitySearchFilters } from './searchFilters';
+import { getWorkspacesUrl } from './routes';
+import { getGeneratedProductFileName } from './sequence-generation';
 import { compareEvents } from './simulation';
 import { pluralize } from './text';
 import {
@@ -522,6 +534,57 @@ async function bulkMoveWorkspaceItems(
 /**
  * Functions that have side-effects (e.g. HTTP requests, toasts, popovers, store updates, etc.).
  */
+/**
+ * Prompts for a workspace and a new file location, then writes `text` to that new file with `metadata`.
+ * Never overwrites an existing file. Returns the location written, or null if the user canceled.
+ */
+async function saveTextToNewWorkspaceFile(
+  text: string,
+  metadata: Partial<Pick<WorkspaceFileMetadata, 'user'>>,
+  user: User | null,
+  initialFileName: string = '',
+): Promise<{ filePath: string; workspaceId: number } | null> {
+  const { confirm: confirmWorkspace, value: valueWorkspace } = await showExpansionPanelModal(user);
+
+  if (!confirmWorkspace || !valueWorkspace) {
+    return null;
+  }
+
+  const { workspaceId, workspaceName } = valueWorkspace;
+
+  if (!featurePermissions.workspace.canUpdate(user, workspaceId)) {
+    throwPermissionError('upload to the selected workspace');
+  }
+
+  const workspaceContents = await effects.getWorkspaceContents(workspaceId, '', user);
+  if (!workspaceContents) {
+    throw new Error('Unable To Find The Specified Workspace');
+  }
+
+  const workspaceTree: WorkspaceTreeNode = {
+    contents: workspaceContents,
+    name: workspaceName,
+    type: WorkspaceContentType.Workspace,
+  };
+
+  const { confirm: confirmNewFile, value: confirmNewFileValue } = await showNewWorkspaceSequenceModal(
+    workspaceId,
+    workspaceTree,
+    workspaceName,
+    initialFileName,
+  );
+
+  if (!confirmNewFile || !confirmNewFileValue) {
+    return null;
+  }
+
+  const { filePath } = confirmNewFileValue;
+  // shouldOverwrite = false: the workspace server rejects writing over an existing file
+  await WorkspaceApi.saveFile(workspaceId, filePath, text, false, user);
+  await WorkspaceApi.setFileMetadata(workspaceId, filePath, metadata, user);
+  return { filePath, workspaceId };
+}
+
 const effects = {
   async applyActivitiesByFilter(
     filter: SequenceFilter,
@@ -4096,6 +4159,85 @@ const effects = {
     }
   },
 
+  async generateSequence(
+    request: GenerateSequenceRequest,
+    plan: Plan,
+    user: User | null,
+  ): Promise<GenerateSequenceResponse | null> {
+    try {
+      if (!queryPermissions.GENERATE_SEQUENCE(user, plan, plan.model)) {
+        throwPermissionError('generate a sequence');
+      }
+      generatingSequenceStore.set(true);
+      const startTime = performance.now();
+      const data = await reqHasura<GenerateSequenceResponse>(
+        gql.GENERATE_SEQUENCE,
+        {
+          metadata: request.metadata ?? {},
+          planId: request.planId,
+          selection: request.selection,
+          sequenceId: request.sequenceId,
+          simulationDatasetId: request.simulationDatasetId ?? null,
+        },
+        user,
+      );
+      const { generateSequence } = data;
+      if (generateSequence == null) {
+        throw Error('Sequence generation returned no result');
+      }
+
+      // A failed Generation is still persisted and shown in the generation history with its diagnostics.
+      if (generateSequence.status === 'success') {
+        showSuccessToast(`Sequence "${request.sequenceId}" Generated`);
+        logMessage('log', `Generated sequence "${request.sequenceId}" (generation ${generateSequence.generationId}).`, {
+          duration: performance.now() - startTime,
+        });
+      } else {
+        showFailureToast(`Sequence "${request.sequenceId}" Generation Failed`);
+        logMessage('log', `Generation ${generateSequence.generationId} of "${request.sequenceId}" failed.`, {
+          duration: performance.now() - startTime,
+          level: 'error',
+        });
+      }
+      return generateSequence;
+    } catch (e) {
+      catchError('log', 'Sequence Generation Failed', e as Error);
+      showFailureToast('Sequence Generation Failed');
+      return null;
+    } finally {
+      generatingSequenceStore.set(false);
+    }
+  },
+
+  async generateSequencePreflight(
+    request: GenerateSequenceRequest,
+    plan: Plan,
+    user: User | null,
+    signal?: AbortSignal,
+  ): Promise<GenerateSequencePreflightResponse | null> {
+    try {
+      if (!queryPermissions.GENERATE_SEQUENCE_PREFLIGHT(user, plan, plan.model)) {
+        throwPermissionError('check sequence generation');
+      }
+      const data = await reqHasura<GenerateSequencePreflightResponse>(
+        gql.GENERATE_SEQUENCE_PREFLIGHT,
+        {
+          planId: request.planId,
+          selection: request.selection,
+          sequenceId: request.sequenceId,
+          simulationDatasetId: request.simulationDatasetId ?? null,
+        },
+        user,
+        signal,
+      );
+      return data.generateSequencePreflight ?? null;
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        catchError('log', 'Sequence Generation Preflight Failed', e as Error);
+      }
+      return null;
+    }
+  },
   async getActionRun(actionRunId: number, user: User | null): Promise<ActionRun | null> {
     try {
       const query = convertToQuery(gql.SUB_ACTION_RUN);
@@ -4597,6 +4739,15 @@ const effects = {
     }
   },
 
+  async getGeneratedProduct(id: number, user: User | null): Promise<GeneratedProduct | null> {
+    try {
+      const data = await reqHasura<GeneratedProduct>(gql.GET_GENERATED_PRODUCT, { id }, user);
+      return data.generatedProduct ?? null;
+    } catch (e) {
+      catchError('log', 'Failed to retrieve generated product', e as Error);
+      return null;
+    }
+  },
   async getModel(modelId: number, user: User | null): Promise<Model | null> {
     try {
       const query = convertToQuery(gql.SUB_MODEL);
@@ -5162,6 +5313,15 @@ const effects = {
     return null;
   },
 
+  async getSequenceGeneration(id: number, user: User | null): Promise<SequenceGeneration | null> {
+    try {
+      const data = await reqHasura<SequenceGeneration>(gql.GET_SEQUENCE_GENERATION, { id }, user);
+      return data.sequenceGeneration ?? null;
+    } catch (e) {
+      catchError('log', 'Failed to retrieve sequence generation', e as Error);
+      return null;
+    }
+  },
   async getSpans(
     datasetId: number,
     planStartTimeYmd: string,
@@ -7015,6 +7175,68 @@ const effects = {
     }
   },
 
+  /**
+   * Writes a generated product to a new SeqDev Workspace file and opens it. The file records which Generation and
+   * Generated Product it came from; it is a derivative that later generations never overwrite or update.
+   */
+  async sendGeneratedProductToWorkspace(
+    generation: Pick<SequenceGeneration, 'id' | 'plan_id' | 'simulation_dataset_id'>,
+    product: GeneratedProductSlim,
+    plan: Plan | null,
+    user: User | null,
+  ): Promise<{ filePath: string; workspaceId: number } | null> {
+    try {
+      const fullProduct = await effects.getGeneratedProduct(product.id, user);
+      if (fullProduct === null) {
+        throw new Error(`Generated product ${product.id} could not be loaded`);
+      }
+
+      const metadata: Partial<Pick<WorkspaceFileMetadata, 'user'>> = {
+        user: {
+          model: {
+            id: plan?.model_id ?? -1,
+            name: plan?.model?.name ?? '',
+          },
+          plan: {
+            end: plan?.end_time_doy ?? '',
+            id: generation.plan_id,
+            name: plan?.name ?? '',
+            start: plan?.start_time_doy ?? '',
+          },
+          sequence_metadata: fullProduct.metadata,
+          simulation_dataset_id: generation.simulation_dataset_id,
+          source_generated_product_id: fullProduct.id,
+          source_generation_id: generation.id,
+          source_output_hash: fullProduct.output_hash,
+          source_seq_id: fullProduct.seq_id,
+        },
+      };
+
+      const savedFile = await saveTextToNewWorkspaceFile(
+        fullProduct.rendered_output,
+        metadata,
+        user,
+        getGeneratedProductFileName(fullProduct),
+      );
+      if (savedFile === null) {
+        return null;
+      }
+
+      showSuccessToast('Workspace File Created Successfully');
+      logMessage(
+        'log',
+        `Sent generated product ${fullProduct.id} (generation ${generation.id}) to workspace ${savedFile.workspaceId} as "${savedFile.filePath}".`,
+      );
+      if (browser) {
+        window.open(getWorkspacesUrl(base, savedFile.workspaceId, savedFile.filePath), '_blank');
+      }
+      return savedFile;
+    } catch (e) {
+      catchError('log', 'Workspace file was unable to be created', e as Error);
+      showFailureToast('Workspace File Creation Failed', e);
+      return null;
+    }
+  },
   async sendSequenceToWorkspace(
     sequence: ExpansionSequence | null,
     expandedSequence: string | null,
@@ -7029,45 +7251,11 @@ const effects = {
         throw new Error("Expanded Sequence Doesn't Exist");
       }
 
-      const { confirm: confirmWorkspace, value: valueWorkspace } = await showExpansionPanelModal(user);
-
-      if (!confirmWorkspace || !valueWorkspace) {
-        throw new Error('Unable To Find The Specified Workspace');
-      }
-
-      const { workspaceId, workspaceName } = valueWorkspace;
-
-      if (!featurePermissions.workspace.canUpdate(user, workspaceId)) {
-        throwPermissionError('upload to the selected workspace');
-      }
-
-      const workspaceContents = await effects.getWorkspaceContents(workspaceId, '', user);
-      if (!workspaceContents) {
-        throw new Error('Unable To Find The Specified Workspace');
-      }
-
-      const workspaceTree: WorkspaceTreeNode = {
-        contents: workspaceContents,
-        name: workspaceName,
-        type: WorkspaceContentType.Workspace,
-      };
-      workspaceTree;
-
-      const { confirm: confirmNewFile, value: confirmNewFileValue } = await showNewWorkspaceSequenceModal(
-        workspaceId,
-        workspaceTree,
-        workspaceName,
-      );
-
-      if (confirmNewFile && confirmNewFileValue) {
-        const { filePath: newFilePath } = confirmNewFileValue;
-        await WorkspaceApi.saveFile(workspaceId, newFilePath, expandedSequence, false, user);
-        await WorkspaceApi.setFileMetadata(workspaceId, newFilePath, metadata, user);
-
-        showSuccessToast('Workspace File Created Successfully');
-      } else {
+      const savedFile = await saveTextToNewWorkspaceFile(expandedSequence, metadata, user);
+      if (savedFile === null) {
         throw new Error('Workspace File Creation Failed');
       }
+      showSuccessToast('Workspace File Created Successfully');
     } catch (e) {
       catchError('log', 'Workspace file was unable to be created', e as Error);
       showFailureToast('Workspace File Creation Failed', e);

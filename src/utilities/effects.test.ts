@@ -10,6 +10,7 @@ import type { ActivityLayerFilter } from '../types/timeline';
 import effects, { replacePaths } from './effects';
 import * as Modals from './modal';
 import * as Requests from './requests';
+import * as Toasts from './toast';
 
 const mockPlanStore = await vi.hoisted(() => import('../stores/__mocks__/plan.mock'));
 
@@ -464,6 +465,74 @@ describe('Handle modal and requests in effects', () => {
         'Sequence Templating Failed',
         Error('Sequence Templating Failed'),
       );
+    });
+  });
+
+  describe('generateSequence', () => {
+    const plan = { id: 3, model: { id: 1, owner: 'test' } as Model, owner: 'test' } as Plan;
+    const request = {
+      planId: 3,
+      selection: { ids: [1, 2], type: 'activity-directives' as const },
+      sequenceId: 'E17_MINI',
+      simulationDatasetId: 5,
+    };
+
+    it('should send one generateSequence request and return a successful generation', async () => {
+      const reqHasuraSpy = vi.spyOn(Requests, 'reqHasura').mockResolvedValue({
+        generateSequence: { diagnostics: [], generatedProductIds: [7], generationId: 42, status: 'success' },
+      });
+
+      const result = await effects.generateSequence(request, plan, mockUser);
+
+      expect(reqHasuraSpy).toHaveBeenCalledTimes(1);
+      expect(reqHasuraSpy.mock.calls[0][1]).toEqual({ ...request, metadata: {} });
+      expect(result).toEqual({ diagnostics: [], generatedProductIds: [7], generationId: 42, status: 'success' });
+      expect(Toasts.showSuccessToast).toHaveBeenCalledWith('Sequence "E17_MINI" Generated');
+    });
+
+    it('should return a failed generation with its diagnostics', async () => {
+      const diagnostics = [
+        {
+          activityType: 'Calibration',
+          code: 'MISSING_EXPANSION',
+          message: 'm',
+          severity: 'error',
+          sourceActivityIds: [9],
+        },
+      ];
+      vi.spyOn(Requests, 'reqHasura').mockResolvedValue({
+        generateSequence: { diagnostics, generatedProductIds: [], generationId: 41, status: 'failed' },
+      });
+      vi.spyOn(Errors, 'catchError').mockImplementationOnce(catchErrorSpy);
+
+      const result = await effects.generateSequence(request, plan, mockUser);
+
+      expect(result?.status).toEqual('failed');
+      expect(result?.diagnostics).toEqual(diagnostics);
+      expect(Toasts.showFailureToast).toHaveBeenCalledWith('Sequence "E17_MINI" Generation Failed');
+      expect(catchErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('should correctly handle null responses', async () => {
+      vi.spyOn(Requests, 'reqHasura').mockResolvedValue({ generateSequence: null });
+      vi.spyOn(Errors, 'catchError').mockImplementationOnce(catchErrorSpy);
+
+      const result = await effects.generateSequence(request, plan, mockUser);
+
+      expect(result).toBeNull();
+      expect(catchErrorSpy).toHaveBeenCalledWith(
+        'log',
+        'Sequence Generation Failed',
+        Error('Sequence generation returned no result'),
+      );
+    });
+  });
+
+  describe('getGeneratedProduct', () => {
+    it('should correctly handle null responses', async () => {
+      vi.spyOn(Requests, 'reqHasura').mockResolvedValue({ generatedProduct: null });
+
+      expect(await effects.getGeneratedProduct(1, mockUser)).toBeNull();
     });
   });
 

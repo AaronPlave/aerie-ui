@@ -32,10 +32,16 @@ test.describe.serial('Plan', () => {
     await expect(setup.plan.panelConstraints).toBeVisible();
   });
 
-  test(`Clicking on 'Expansion' in the grid menu should show the expansion panel`, async () => {
+  test(`Clicking on 'Expansion (Legacy)' in the grid menu should show the expansion panel`, async () => {
     await expect(setup.plan.panelExpansion).not.toBeVisible();
     await setup.plan.showPanel(PanelNames.EXPANSION);
     await expect(setup.plan.panelExpansion).toBeVisible();
+  });
+
+  test(`Clicking on 'Sequences' in the grid menu should show the sequences panel`, async () => {
+    await expect(setup.plan.panelSequences).not.toBeVisible();
+    await setup.plan.showPanel(PanelNames.SEQUENCES);
+    await expect(setup.plan.panelSequences).toBeVisible();
   });
 
   test(`Clicking on 'Plan Metadata' in the grid menu should show the plan metadata panel`, async () => {
@@ -92,12 +98,12 @@ test.describe.serial('Plan', () => {
     await expect(setup.plan.navButtonSimulationMenu).not.toBeVisible();
   });
 
-  test(`Hovering on 'Expansion' in the top navigation bar should show the expansion menu`, async () => {
-    await expect(setup.plan.navButtonExpansionMenu).not.toBeVisible();
-    await setup.plan.navButtonExpansion.hover();
-    await expect(setup.plan.navButtonExpansionMenu).toBeVisible();
+  test(`Hovering on 'Sequences' in the top navigation bar should show the sequence generation menu`, async () => {
+    await expect(setup.plan.navButtonSequencesMenu).not.toBeVisible();
+    await setup.plan.navButtonSequences.hover();
+    await expect(setup.plan.navButtonSequencesMenu).toBeVisible();
     await setup.plan.planTitle.hover();
-    await expect(setup.plan.navButtonExpansionMenu).not.toBeVisible();
+    await expect(setup.plan.navButtonSequencesMenu).not.toBeVisible();
   });
 
   test(`Hovering on 'Scheduling' in the top navigation bar should show the scheduling menu`, async () => {

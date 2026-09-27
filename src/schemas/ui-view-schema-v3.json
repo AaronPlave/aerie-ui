@@ -241,6 +241,7 @@
         "PlanMetadataPanel",
         "SchedulingConditionsPanel",
         "SchedulingGoalsPanel",
+        "SequencesPanel",
         "SimulationEventsPanel",
         "SimulationPanel",
         "TimelineEditorPanel",

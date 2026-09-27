@@ -18,6 +18,7 @@ import DeleteWorkspaceItemsModal from '../components/modals/DeleteWorkspaceItems
 import EditViewModal from '../components/modals/EditViewModal.svelte';
 import ExpansionPanelModal from '../components/modals/ExpansionPanelModal.svelte';
 import ExpansionSequenceModal from '../components/modals/ExpansionSequenceModal.svelte';
+import GenerateSequenceModal from '../components/modals/GenerateSequenceModal.svelte';
 import ImportWorkspaceFileModal from '../components/modals/ImportWorkspaceFileModal.svelte';
 import LibrarySequenceModal from '../components/modals/LibrarySequenceModal.svelte';
 import ManagePlanConstraintsModal from '../components/modals/ManagePlanConstraintsModal.svelte';
@@ -38,6 +39,7 @@ import RestorePlanSnapshotModal from '../components/modals/RestorePlanSnapshotMo
 import RunActionModal from '../components/modals/RunActionModal.svelte';
 import RunActionResultsModal from '../components/modals/RunActionResultsModal.svelte';
 import SavedViewsModal from '../components/modals/SavedViewsModal.svelte';
+import SequenceGenerationModal from '../components/modals/SequenceGenerationModal.svelte';
 import TransformActivitiesModal from '../components/modals/TransformActivitiesModal.svelte';
 import UnsavedChangesModal from '../components/modals/UnsavedChangesModal.svelte';
 import UpdatePlanMissionModelModal from '../components/modals/UpdatePlanMissionModelModal.svelte';
@@ -55,6 +57,11 @@ import type { ModalElement, ModalElementValue } from '../types/modal';
 import type { ArgumentsMap } from '../types/parameter';
 import type { Plan, PlanBranchRequestAction, PlanForMerging, PlanMergeRequestStatus, PlanSlim } from '../types/plan';
 import type { PlanSnapshot } from '../types/plan-snapshot';
+import type {
+  GenerateSequenceRequest,
+  GenerateSequenceResponse,
+  SequenceGeneration,
+} from '../types/sequence-generation';
 import type { Tag } from '../types/tags';
 import type { ActivityTransformDirection } from '../types/time';
 import type { ViewDefinition } from '../types/view';
@@ -692,6 +699,7 @@ export async function showNewWorkspaceSequenceModal(
   currentWorkspace: Workspace,
   currentWorkspaceContents: WorkspaceTreeNode,
   startingPath: string = '',
+  initialFileName: string = '',
 ): Promise<ModalElementValue> {
   return new Promise(resolve => {
     if (browser) {
@@ -702,6 +710,7 @@ export async function showNewWorkspaceSequenceModal(
           props: {
             currentWorkspace,
             currentWorkspaceContents,
+            initialFileName,
             startingPath,
           },
           target,
@@ -1187,6 +1196,90 @@ export async function showEditViewModal(): Promise<ModalElementValue<{ id?: numb
           target.resolve = null;
           resolve({ confirm: true, value: e.detail });
           editViewModal.$destroy();
+        });
+      }
+    } else {
+      resolve({ confirm: false });
+    }
+  });
+}
+
+/**
+ * Shows the Generate Sequence modal. Resolves with the result of the generation, if one was started.
+ */
+export async function showGenerateSequenceModal(
+  plan: Plan,
+  user: User | null,
+  options: { initialDirectiveIds?: number[]; initialRequest?: GenerateSequenceRequest | null } = {},
+): Promise<ModalElementValue<GenerateSequenceResponse>> {
+  return new Promise(resolve => {
+    if (browser) {
+      const target: ModalElement | null = document.querySelector('#svelte-modal');
+
+      if (target) {
+        const generateSequenceModal = new GenerateSequenceModal({
+          props: {
+            initialDirectiveIds: options.initialDirectiveIds ?? [],
+            initialRequest: options.initialRequest ?? null,
+            plan,
+            user,
+          },
+          target,
+        });
+        target.resolve = resolve;
+
+        generateSequenceModal.$on('close', () => {
+          target.replaceChildren();
+          target.resolve = null;
+          resolve({ confirm: false });
+          generateSequenceModal.$destroy();
+        });
+
+        generateSequenceModal.$on('generated', (e: CustomEvent<GenerateSequenceResponse>) => {
+          target.replaceChildren();
+          target.resolve = null;
+          resolve({ confirm: true, value: e.detail });
+          generateSequenceModal.$destroy();
+        });
+      }
+    } else {
+      resolve({ confirm: false });
+    }
+  });
+}
+
+/**
+ * Shows the details (provenance, diagnostics, output) of a sequence Generation. Resolves with `retry` set when the
+ * user asks to retry a failed generation.
+ */
+export async function showSequenceGenerationModal(
+  generationId: number,
+  plan: Plan | null,
+  user: User | null,
+): Promise<ModalElementValue<{ retry: SequenceGeneration }>> {
+  return new Promise(resolve => {
+    if (browser) {
+      const target: ModalElement | null = document.querySelector('#svelte-modal');
+
+      if (target) {
+        const sequenceGenerationModal = new SequenceGenerationModal({
+          props: { generationId, plan, user },
+          target,
+        });
+        target.resolve = resolve;
+
+        sequenceGenerationModal.$on('close', () => {
+          target.replaceChildren();
+          target.resolve = null;
+          resolve({ confirm: false });
+          sequenceGenerationModal.$destroy();
+        });
+
+        sequenceGenerationModal.$on('retry', (e: CustomEvent<SequenceGeneration>) => {
+          target.replaceChildren();
+          target.resolve = null;
+          resolve({ confirm: true, value: { retry: e.detail } });
+          sequenceGenerationModal.$destroy();
         });
       }
     } else {
