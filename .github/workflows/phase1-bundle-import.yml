@@ -1,0 +1,23 @@
+name: Import Phase 1 bundle
+on:
+  push:
+    branches:
+      - tmp/phase1-bundle-import
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Import bundle to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git bundle verify .bundle-import/phase1.bundle
+          git fetch .bundle-import/phase1.bundle 'refs/heads/feature/sequence-generation-phase1:refs/remotes/bundle/phase1'
+          git push origin 'refs/remotes/bundle/phase1:refs/heads/feature/sequence-generation-phase1' --force
