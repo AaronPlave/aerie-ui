@@ -34,6 +34,7 @@
     Timeline,
     XAxisTick,
   } from '../../types/timeline';
+  import type { TimelineResourceProvider } from '../../types/timelineSource';
   import { clamp } from '../../utilities/generic';
   import { formatDate } from '../../utilities/time';
   import { MAX_CANVAS_SIZE, TimelineInteractionMode, TimelineLockStatus, getXScale } from '../../utilities/timeline';
@@ -59,6 +60,7 @@
   export let planEndTimeDoy: string;
   export let plan: Plan | null = null;
   export let planStartTimeYmd: string;
+  export let resourceProvider: TimelineResourceProvider | null = null;
   export let resourceTypes: ResourceType[] = [];
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
@@ -78,6 +80,8 @@
   export let interpolateHoverValue: boolean = false;
   export let showTimelineTooltip: boolean = false;
   export let limitTooltipToLine: boolean = false;
+  // SPIKE: the start/end header was only shown when a plan exists, though it only needs maxTimeRange.
+  export let showTimeDisplay: boolean = false;
 
   const dispatch = createEventDispatcher<{
     mouseDown: MouseDown;
@@ -394,7 +398,7 @@
 
 <div bind:this={timelineDiv} bind:clientWidth class="timeline" id={`timeline-${timeline?.id}`}>
   <div bind:this={timelineHistogramDiv} class="timeline-time-row">
-    {#if plan}
+    {#if plan || showTimeDisplay}
       <TimelineTimeDisplay
         planStartTime={formattedPlanStartTime}
         planEndTime={formattedPlanEndTime}
@@ -499,6 +503,7 @@
             {planEndTimeDoy}
             {plan}
             {planStartTimeYmd}
+            {resourceProvider}
             {rowDragMoveDisabled}
             {decimate}
             {interpolateHoverValue}
@@ -507,7 +512,6 @@
             {selectedActivityDirectiveId}
             {selectedExternalEventId}
             {selectedSpanId}
-            {simulationDataset}
             {spanUtilityMaps}
             {spansMap}
             {timelineInteractionMode}

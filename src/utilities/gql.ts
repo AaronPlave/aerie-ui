@@ -1673,6 +1673,25 @@ const gql = {
     }
   `,
 
+  // SPIKE: standalone dataset + its profile catalog (headers only, no segments).
+  GET_STANDALONE_DATASET: `#graphql
+    query GetStandaloneDataset($id: Int!) {
+      standaloneDataset: ${Queries.STANDALONE_DATASET}(id: $id) {
+        dataset_id
+        end_time
+        id
+        name
+        start_time
+        dataset {
+          profiles(order_by: { name: asc }) {
+            name
+            type
+          }
+        }
+      }
+    }
+  `,
+
   GET_TYPESCRIPT_CONSTRAINTS: `#graphql
     query GetTypeScriptConstraints($model_id: Int!) {
       dslTypeScriptResponse: ${Queries.CONSTRAINTS_DSL_TYPESCRIPT}(missionModelId: $model_id) {

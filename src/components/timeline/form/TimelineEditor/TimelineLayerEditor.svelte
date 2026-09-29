@@ -9,7 +9,8 @@
   import TimelineLineLayerIcon from '../../../../assets/timeline-line-layer.svg?component';
   import TimelineXRangeLayerIcon from '../../../../assets/timeline-x-range-layer.svg?component';
   import { ViewDiscreteLayerColorPresets, ViewLineLayerColorPresets } from '../../../../constants/view';
-  import { externalResourceNames, resourceTypes } from '../../../../stores/simulation';
+  import { externalResourceNames, resourceTypes as modelResourceTypes } from '../../../../stores/simulation';
+  import { getTimelineSourceCatalog } from '../../../../stores/timelineSourceCatalog';
   import type { RadioButtonId } from '../../../../types/radio-buttons';
   import type {
     ActivityLayer,
@@ -30,6 +31,9 @@
   import TimelineEditorLayerSettings from '../TimelineEditorLayerSettings.svelte';
   import ActivityFilterBuilder from './ActivityFilterBuilder.svelte';
   import ExternalEventFilterBuilder from './ExternalEventFilterBuilder.svelte';
+
+  // SPIKE: a non-plan page can supply its own resource catalog; the plan page falls back to the model's.
+  const resourceTypes = getTimelineSourceCatalog().resourceTypes ?? modelResourceTypes;
 
   export let layer: Layer;
   export let yAxes: Axis[] = [];

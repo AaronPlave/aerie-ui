@@ -14,10 +14,8 @@
     externalSources,
     planDerivationGroupLinks,
   } from '../../stores/external-source';
-  import { createExternalResourceSubscription } from '../../stores/externalResource';
   import { planModelActivityTypes } from '../../stores/plan';
-  import { createProfileSubscription } from '../../stores/profile';
-  import { resourceTypes, resourceTypesLoading } from '../../stores/simulation';
+  import { getTimelineSourceCatalog } from '../../stores/timelineSourceCatalog';
   import { selectedRow, viewAddFilterToRow } from '../../stores/views';
   import type {
     ActivityDirective,
@@ -29,15 +27,7 @@
   import type { ConstraintResultWithName } from '../../types/constraint';
   import type { ExternalEvent, ExternalEventId } from '../../types/external-event';
   import type { Plan } from '../../types/plan';
-  import type {
-    Resource,
-    ResourceRequest,
-    SimulationDataset,
-    Span,
-    SpanId,
-    SpanUtilityMaps,
-    SpansMap,
-  } from '../../types/simulation';
+  import type { Resource, ResourceRequest, Span, SpanId, SpanUtilityMaps, SpansMap } from '../../types/simulation';
   import type {
     ActivityOptions,
     Axis,
@@ -57,6 +47,7 @@
     TimelineItemType,
     XAxisTick,
   } from '../../types/timeline';
+  import type { TimelineResourceProvider } from '../../types/timelineSource';
   import { getAllSpansForActivityDirective } from '../../utilities/activities';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
@@ -117,12 +108,12 @@
   export let planEndTimeDoy: string;
   export let plan: Plan | null = null;
   export let planStartTimeYmd: string;
+  export let resourceProvider: TimelineResourceProvider | null = null;
   export let rowDragMoveDisabled = true;
   export let rowHeaderDragHandleWidthPx: number = 2;
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
   export let selectedSpanId: SpanId | null = null;
-  export let simulationDataset: SimulationDataset | null = null;
   export let spanUtilityMaps: SpanUtilityMaps;
   export let spansMap: SpansMap | null = {};
   export let timelineInteractionMode: TimelineInteractionMode;
@@ -133,6 +124,10 @@
   export let xTicksView: XAxisTick[] = [];
   export let yAxes: Axis[] = [];
   export let user: User | null;
+
+  // SPIKE: type metadata used when applying dynamic (subsystem/parameter) filters. A non-plan page
+  // supplies its own interval types; the plan page falls back to the mission model's activity types.
+  const filterActivityTypes = getTimelineSourceCatalog().intervalTypes ?? planModelActivityTypes;
 
   const dispatch = createEventDispatcher<{
     buildDirective: { startTime: string; type: string };
@@ -221,8 +216,9 @@
     }
   });
 
-  $: if (plan && simulationDataset !== null && layers && !$resourceTypesLoading) {
-    const simulationDatasetId = simulationDataset.dataset_id;
+  // SPIKE: which dataset/profile a resource name resolves to is the provider's concern, not the row's.
+  $: if (resourceProvider !== null && layers) {
+    const providerKey = resourceProvider.key;
     const resourceNamesSet = new Set<string>();
     layers.map(layer => {
       if (layer.chartType === 'line' || layer.chartType === 'x-range') {
@@ -233,36 +229,28 @@
     });
     const resourceNames = Array.from(resourceNamesSet);
 
-    // Drop entries no longer referenced by any layer or whose sim dataset
-    // changed. Both factories own their own registry cleanup on unsubscribe.
+    // Drop entries no longer referenced by any layer or whose provider changed
+    // (e.g. a different sim dataset). Subscriptions own their registry cleanup on unsubscribe.
     Object.entries(resourceRequestMap).forEach(([key, value]) => {
-      if (resourceNames.indexOf(key) < 0 || value.simulationDatasetId !== simulationDatasetId) {
+      if (resourceNames.indexOf(key) < 0 || value.providerKey !== providerKey) {
         value.unsubscribe?.();
         delete resourceRequestMap[key];
         resourceRequestMap = { ...resourceRequestMap };
       }
     });
 
-    const simProfileStartYmd = simulationDataset?.simulation_start_time ?? plan.start_time;
     resourceNames.forEach(name => {
       if (
         resourceRequestMap[name] &&
-        simulationDatasetId === resourceRequestMap[name].simulationDatasetId &&
+        providerKey === resourceRequestMap[name].providerKey &&
         resourceRequestMap[name].unsubscribe
       ) {
         return;
       }
 
-      const isExternal = !$resourceTypes.find(type => type.name === name);
-      // External datasets are matched by the simulation_dataset *id* (what
-      // plan_dataset.simulation_dataset_id references), whereas internal
-      // profiles are fetched by dataset_id. These are distinct id spaces;
-      // passing dataset_id to the external factory makes its sim-tied
-      // plan_dataset row preference silently never match.
-      const subscription = isExternal
-        ? createExternalResourceSubscription(simulationDataset.id, name, plan.start_time, user)
-        : createProfileSubscription(simulationDatasetId, name, simProfileStartYmd, user);
-      const type: 'external' | 'internal' = isExternal ? 'external' : 'internal';
+      // Range deliberately not passed: whole-profile fetch for now, and passing viewTimeRange here
+      // would re-run this block on every pan/zoom.
+      const subscription = (resourceProvider as TimelineResourceProvider).subscribeResource(name);
       // subscription.store.subscribe() runs its callback immediately,
       // before it returns. That callback creates an unsubscribe function
       // that references this variable — so it must already exist.
@@ -275,9 +263,8 @@
             ...resourceRequestMap[name],
             error,
             loading,
+            providerKey,
             resource,
-            simulationDatasetId,
-            type,
             unsubscribe: () => {
               storeUnsubscribe?.();
               subscription.unsubscribe();
@@ -286,7 +273,7 @@
         };
       });
     });
-  } else if (simulationDataset === null) {
+  } else if (resourceProvider === null) {
     Object.values(resourceRequestMap).forEach(value => {
       value.unsubscribe?.();
     });
@@ -416,7 +403,7 @@
               layer.filter.activity,
               activityDirectives || [],
               spansList,
-              $planModelActivityTypes,
+              $filterActivityTypes,
               $activityArgumentDefaultsMap,
             );
             const uniqueDirectives: ActivityDirective[] = [];
@@ -465,7 +452,8 @@
           timeFilteredSpans = [];
         }
 
-        hasActivityLayer = timeFilteredActivityDirectives.length > 0 || timeFilteredActivityDirectives.length > 0;
+        // SPIKE fix: previously checked directives twice, so a row of spans with no directives never drew.
+        hasActivityLayer = timeFilteredActivityDirectives.length > 0 || timeFilteredSpans.length > 0;
       } else {
         hasActivityLayer = false;
       }

@@ -23,9 +23,10 @@
   import ActivityModeWidthIcon from '../../../assets/width.svg?component';
   import { ViewDefaultDiscreteOptions } from '../../../constants/view';
   import { ViewConstants } from '../../../enums/view';
-  import { maxTimeRange, viewTimeRange } from '../../../stores/plan';
+  import { maxTimeRange as planMaxTimeRange, viewTimeRange } from '../../../stores/plan';
   import { plugins } from '../../../stores/plugins';
   import { yAxesWithScaleDomainsCache } from '../../../stores/simulation';
+  import { getTimelineSourceCatalog } from '../../../stores/timelineSourceCatalog';
   import {
     selectedRowId,
     selectedTimelineId,
@@ -84,6 +85,9 @@
   import EditorSection from './TimelineEditor/EditorSection.svelte';
   import TimelineLayerEditor from './TimelineEditor/TimelineLayerEditor.svelte';
   import TimelineEditorYAxisSettings from './TimelineEditorYAxisSettings.svelte';
+
+  // SPIKE: plan.ts derives maxTimeRange from the plan; a non-plan page supplies its own bounds.
+  const maxTimeRange = getTimelineSourceCatalog().maxTimeRange ?? planMaxTimeRange;
 
   export let gridSection: ViewGridSection;
 

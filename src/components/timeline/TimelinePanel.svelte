@@ -17,6 +17,7 @@
   import {
     initialSpansLoading,
     resourceTypes,
+    resourceTypesLoading,
     selectedSpanId,
     simulation,
     simulationDataset,
@@ -44,9 +45,11 @@
     Row,
     Timeline as TimelineType,
   } from '../../types/timeline';
+  import type { TimelineResourceProvider } from '../../types/timelineSource';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
   import { featurePermissions } from '../../utilities/permissions';
+  import { createPlanTimelineResourceProvider } from '../../utilities/timelineResourceProviders';
   import Panel from '../ui/Panel.svelte';
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import Timeline from './Timeline.svelte';
@@ -65,10 +68,19 @@
   let interpolateHoverValue = false;
   let limitTooltipToLine = false;
   let showTimelineTooltip = true;
+  let resourceProvider: TimelineResourceProvider | null = null;
 
   $: if (user !== null && $plan !== null) {
     hasUpdateDirectivePermission = featurePermissions.activityDirective.canUpdate(user, $plan) && !$planReadOnly;
     hasUpdateSimulationPermission = featurePermissions.simulation.canUpdate(user, $plan) && !$planReadOnly;
+  }
+
+  // Same gating Row.svelte used to apply itself: no sim dataset -> no resources; while model
+  // resource types load, keep the current provider rather than misclassifying names as external.
+  $: if ($simulationDataset === null) {
+    resourceProvider = null;
+  } else if ($plan && !$resourceTypesLoading) {
+    resourceProvider = createPlanTimelineResourceProvider($plan, $simulationDataset, $resourceTypes, user);
   }
 
   $: timelines = $view?.definition.plan.timelines || [];
@@ -239,6 +251,7 @@
       planEndTimeDoy={$plan?.end_time_doy ?? ''}
       plan={$plan}
       planStartTimeYmd={$plan?.start_time ?? ''}
+      {resourceProvider}
       resourceTypes={$resourceTypes}
       {timeline}
       timelineInteractionMode={$timelineInteractionMode}

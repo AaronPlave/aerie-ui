@@ -47,9 +47,9 @@ export type Resource = {
 export type ResourceRequest = {
   error: string;
   loading: boolean;
+  /** TimelineResourceProvider.key the resource was requested from. */
+  providerKey: string;
   resource: Resource | null;
-  simulationDatasetId: number;
-  type: 'internal' | 'external';
   unsubscribe?: () => void;
 };
 

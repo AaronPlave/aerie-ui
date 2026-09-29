@@ -4,13 +4,19 @@
   import CloseIcon from '@nasa-jpl/stellar/icons/close.svg?component';
   import SearchIcon from '@nasa-jpl/stellar/icons/search.svg?component';
   import { createEventDispatcher } from 'svelte';
+  import { derived } from 'svelte/store';
   import FilterWithPlusIcon from '../../../../assets/filter-with-plus.svg?component';
   import DirectiveIcon from '../../../../assets/timeline-directive.svg?component';
   import SpanIcon from '../../../../assets/timeline-span.svg?component';
   import { activityArgumentDefaultsMap, activityDirectivesMap } from '../../../../stores/activities';
-  import { planModelActivityTypes, subsystemTags } from '../../../../stores/plan';
-  import { spans, spanUtilityMaps } from '../../../../stores/simulation';
+  import {
+    getSubsystemTags,
+    planModelActivityTypes as modelActivityTypes,
+    subsystemTags as modelSubsystemTags,
+  } from '../../../../stores/plan';
+  import { spans as simulationSpans, spanUtilityMaps } from '../../../../stores/simulation';
   import { tags } from '../../../../stores/tags';
+  import { getTimelineSourceCatalog } from '../../../../stores/timelineSourceCatalog';
   import type { ValueSchemaVariant } from '../../../../types/schema';
   import type { ActivityLayerFilter, ActivityLayerFilterSubfieldSchema } from '../../../../types/timeline';
   import { compare, getTarget, lowercase } from '../../../../utilities/generic';
@@ -30,6 +36,12 @@
   import Draggable from './Draggable.svelte';
   import DynamicFilter from './DynamicFilter.svelte';
   import ActivityTypeResult from './FilterTypeResult.svelte';
+
+  // SPIKE: a non-plan page can supply interval types/spans; the plan page falls back to the model's.
+  const catalog = getTimelineSourceCatalog();
+  const planModelActivityTypes = catalog.intervalTypes ?? modelActivityTypes;
+  const subsystemTags = catalog.intervalTypes ? derived(catalog.intervalTypes, getSubsystemTags) : modelSubsystemTags;
+  const spans = catalog.spans ?? simulationSpans;
 
   export let filter: ActivityLayerFilter | undefined = undefined;
   export const filterWidth = 1000;
