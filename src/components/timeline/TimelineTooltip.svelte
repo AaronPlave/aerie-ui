@@ -14,12 +14,15 @@
   import type { LineLayer, LinePoint, MouseOver, Point, Row, XRangePoint } from '../../types/timeline';
   import { addPageFocusListener } from '../../utilities/browser';
   import { convertUsToDurationString, formatDate, getDoyTime } from '../../utilities/time';
+  import type { TimelineSourceRegistry } from '../../types/timelineSource';
   import { getResourceForLayer } from '../../utilities/timeline';
+  import { getSourceLabel, resolveResourceRef } from '../../utilities/timelineSources';
 
   export let interpolateHoverValue: boolean = false;
   export let hidden: boolean = false;
   export let mouseOver: MouseOver | null;
   export let resourceTypes: ResourceType[] = [];
+  export let timelineSources: TimelineSourceRegistry | null = null;
 
   let activityDirectives: ActivityDirective[] = [];
   let externalEvents: ExternalEvent[] = [];
@@ -449,6 +452,24 @@
     `;
   }
 
+  // SPIKE 2: with more than one source, name the source so identical resource names are distinguishable.
+  function textForSource(layer: Row['layers'][number] | null | undefined): string {
+    if (!layer || !timelineSources || timelineSources.sources.length < 2) {
+      return '';
+    }
+    const ref = resolveResourceRef(layer.filter.resource, timelineSources.defaultSourceId);
+    if (!ref) {
+      return '';
+    }
+    return `
+        <div class='tooltip-row'>
+          <span>Source:</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(
+            getSourceLabel(timelineSources, ref.sourceId),
+          )}</span>
+        </div>`;
+  }
+
   function textForLinePoint(point: LinePoint, layerId: number): string {
     const { x, y } = point;
     const layer = row ? row.layers.find(l => l.id === layerId) : null;
@@ -458,7 +479,7 @@
     let formattedYValue = y;
     if (layer && layer.chartType === 'line') {
       name = layer.name ? layer.name : point.name;
-      const layerResource = getResourceForLayer(layer, resourceTypes);
+      const layerResource = getResourceForLayer(layer, resourceTypes, timelineSources?.defaultSourceId);
       if (layerResource) {
         // Only consider a single resource since multiple resources on a single layer is
         // supported in config but not valid
@@ -483,6 +504,7 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
+        ${textForSource(layer)}
         <div class='tooltip-row'>
           <span>Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>
@@ -596,6 +618,7 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
+        ${textForSource(layer)}
         <div class='tooltip-row'>
           <span>Start Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>

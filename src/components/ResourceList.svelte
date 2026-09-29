@@ -4,10 +4,13 @@
   import CloseIcon from '@nasa-jpl/stellar/icons/close.svg?component';
   import UploadIcon from '@nasa-jpl/stellar/icons/upload.svg?component';
   import { plan } from '../stores/plan';
+  import { readable } from 'svelte/store';
   import { allResourceTypes, resourceTypesLoading, simulationDatasetId } from '../stores/simulation';
+  import { getTimelineSourceCatalog } from '../stores/timelineSourceCatalog';
   import type { User } from '../types/app';
   import type { ResourceType } from '../types/simulation';
   import type { TimelineItemType } from '../types/timeline';
+  import type { TimelineSourceRegistry } from '../types/timelineSource';
   import effects from '../utilities/effects';
   import { permissionHandler } from '../utilities/permissionHandler';
   import { featurePermissions } from '../utilities/permissions';
@@ -28,8 +31,18 @@
   let uploadFileInput: HTMLInputElement;
   let loading: boolean = false;
 
-  $: resourceDataTypes = [...new Set($allResourceTypes.map(t => t.schema.type))];
-  $: loading = $resourceTypesLoading;
+  // SPIKE 2: with more than one source, browse one source's catalog at a time. Items from a
+  // non-default source carry sourceId, which survives the drag/drop JSON payload and "add to row".
+  const catalogSources = getTimelineSourceCatalog().sources ?? readable<TimelineSourceRegistry | null>(null);
+  let selectedSourceId: string | null = null;
+  $: registry = $catalogSources;
+  $: if (registry && !registry.sources.find(source => source.id === selectedSourceId)) {
+    selectedSourceId = registry.defaultSourceId;
+  }
+  $: selectedSource = registry?.sources.find(source => source.id === selectedSourceId) ?? null;
+  $: items = selectedSource ? selectedSource.resourceTypes : $allResourceTypes;
+  $: resourceDataTypes = [...new Set(items.map(t => t.schema.type))];
+  $: loading = selectedSource ? !!selectedSource.resourceTypesLoading : $resourceTypesLoading;
   $: if (user !== null && $plan !== null) {
     hasUploadPermission = featurePermissions.externalResources.canCreate(user, $plan);
   }
@@ -62,8 +75,18 @@
   }
 </script>
 
+{#if registry && registry.sources.length > 1}
+  <div class="resource-source">
+    <label class="st-typography-label" for="resource-source-select">Source</label>
+    <select id="resource-source-select" class="st-select w-full" bind:value={selectedSourceId}>
+      {#each registry.sources as source}
+        <option value={source.id}>{source.label}</option>
+      {/each}
+    </select>
+  </div>
+{/if}
 <TimelineItemList
-  items={$allResourceTypes}
+  {items}
   chartType="line"
   typeName="resource"
   typeNamePlural="Resources"
@@ -134,6 +157,13 @@
 </TimelineItemList>
 
 <style>
+  .resource-source {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    padding: 4px 8px 0;
+  }
+
   .upload-container {
     background: var(--st-gray-15);
     border-radius: 5px;

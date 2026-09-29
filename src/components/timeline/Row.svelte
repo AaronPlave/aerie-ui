@@ -47,7 +47,7 @@
     TimelineItemType,
     XAxisTick,
   } from '../../types/timeline';
-  import type { TimelineResourceProvider } from '../../types/timelineSource';
+  import type { TimelineResourceProvider, TimelineSourceRegistry } from '../../types/timelineSource';
   import { getAllSpansForActivityDirective } from '../../utilities/activities';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
@@ -71,6 +71,7 @@
     spanInView,
     type TimelineLockStatus,
   } from '../../utilities/timeline';
+  import { getResourceRequestKey, resolveResourceRef } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import ConstraintViolations from './ConstraintViolations.svelte';
   import LayerDiscrete from './LayerDiscrete.svelte';
@@ -108,7 +109,7 @@
   export let planEndTimeDoy: string;
   export let plan: Plan | null = null;
   export let planStartTimeYmd: string;
-  export let resourceProvider: TimelineResourceProvider | null = null;
+  export let timelineSources: TimelineSourceRegistry | null = null;
   export let rowDragMoveDisabled = true;
   export let rowHeaderDragHandleWidthPx: number = 2;
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
@@ -217,40 +218,63 @@
   });
 
   // SPIKE: which dataset/profile a resource name resolves to is the provider's concern, not the row's.
-  $: if (resourceProvider !== null && layers) {
-    const providerKey = resourceProvider.key;
-    const resourceNamesSet = new Set<string>();
-    layers.map(layer => {
+  // SPIKE 2: a layer names a (source, resource) pair; the row looks the provider up by source id and
+  // keys every request by `${sourceId}::${name}` so same-named resources from two sources never merge.
+  $: defaultSourceId = timelineSources?.defaultSourceId ?? null;
+  $: if (timelineSources !== null && layers) {
+    const providersBySourceId: Record<string, TimelineResourceProvider | null> = {};
+    timelineSources.sources.forEach(source => {
+      providersBySourceId[source.id] = source.provider;
+    });
+    const wanted: Record<string, { name: string; sourceId: string | null }> = {};
+    layers.forEach(layer => {
       if (layer.chartType === 'line' || layer.chartType === 'x-range') {
-        if (layer.filter.resource) {
-          resourceNamesSet.add(layer.filter.resource);
+        const ref = resolveResourceRef(layer.filter.resource, defaultSourceId);
+        if (ref) {
+          wanted[getResourceRequestKey(ref.name, ref.sourceId)] = ref;
         }
       }
     });
-    const resourceNames = Array.from(resourceNamesSet);
 
     // Drop entries no longer referenced by any layer or whose provider changed
     // (e.g. a different sim dataset). Subscriptions own their registry cleanup on unsubscribe.
     Object.entries(resourceRequestMap).forEach(([key, value]) => {
-      if (resourceNames.indexOf(key) < 0 || value.providerKey !== providerKey) {
+      const ref = wanted[key];
+      const provider = ref?.sourceId ? providersBySourceId[ref.sourceId] : undefined;
+      if (!ref || (provider?.key ?? '') !== value.providerKey) {
         value.unsubscribe?.();
         delete resourceRequestMap[key];
         resourceRequestMap = { ...resourceRequestMap };
       }
     });
 
-    resourceNames.forEach(name => {
-      if (
-        resourceRequestMap[name] &&
-        providerKey === resourceRequestMap[name].providerKey &&
-        resourceRequestMap[name].unsubscribe
-      ) {
+    Object.entries(wanted).forEach(([key, { name, sourceId }]) => {
+      const provider = sourceId ? providersBySourceId[sourceId] : undefined;
+      if (resourceRequestMap[key]) {
         return;
       }
-
+      if (provider === undefined) {
+        // The layer names a source this timeline does not have (e.g. an attached dataset that is not
+        // attached on this page). Surface that instead of silently rendering nothing.
+        resourceRequestMap = {
+          ...resourceRequestMap,
+          [key]: {
+            error: `Source "${sourceId ?? 'default'}" is not available for ${name}`,
+            loading: false,
+            providerKey: '',
+            resource: null,
+          },
+        };
+        return;
+      }
+      if (provider === null) {
+        // Source exists but is not ready (e.g. no simulation yet): no request, like the old null provider.
+        return;
+      }
+      const providerKey = provider.key;
       // Range deliberately not passed: whole-profile fetch for now, and passing viewTimeRange here
       // would re-run this block on every pan/zoom.
-      const subscription = (resourceProvider as TimelineResourceProvider).subscribeResource(name);
+      const subscription = provider.subscribeResource(name);
       // subscription.store.subscribe() runs its callback immediately,
       // before it returns. That callback creates an unsubscribe function
       // that references this variable — so it must already exist.
@@ -259,12 +283,13 @@
       storeUnsubscribe = subscription.store.subscribe(({ error, loading, resource }) => {
         resourceRequestMap = {
           ...resourceRequestMap,
-          [name]: {
-            ...resourceRequestMap[name],
+          [key]: {
+            ...resourceRequestMap[key],
             error,
             loading,
             providerKey,
-            resource,
+            // Stamp the source so downstream (y-axis bounds, row header) can match by (source, name).
+            resource: resource ? { ...resource, sourceId: provider.sourceId } : null,
             unsubscribe: () => {
               storeUnsubscribe?.();
               subscription.unsubscribe();
@@ -273,7 +298,7 @@
         };
       });
     });
-  } else if (resourceProvider === null) {
+  } else if (timelineSources === null) {
     Object.values(resourceRequestMap).forEach(value => {
       value.unsubscribe?.();
     });
@@ -346,7 +371,7 @@
 
   // Compute scale domains for axes since it is optionally defined in the view
   $: if (loadedResources && yAxes) {
-    yAxesWithScaleDomains = getYAxesWithScaleDomains(yAxes, layers, loadedResources, viewTimeRange);
+    yAxesWithScaleDomains = getYAxesWithScaleDomains(yAxes, layers, loadedResources, viewTimeRange, defaultSourceId);
     dispatch('updateYAxes', { axes: yAxesWithScaleDomains, id });
   }
 
@@ -793,19 +818,20 @@
   }
 
   // Retrieve resources from resourceRequestMap by a layer's resource filter
-  function getResourcesForLayer(layer: Layer, resourceRequestMap: Record<string, ResourceRequest> = {}) {
-    if (!layer.filter.resource) {
+  function getResourcesForLayer(
+    layer: Layer,
+    resourceRequestMap: Record<string, ResourceRequest> = {},
+    defaultSourceId: string | null = null,
+  ) {
+    const ref = resolveResourceRef(layer.filter.resource, defaultSourceId);
+    if (!ref) {
       return [];
     }
-    const resources: Resource[] = [];
-    if (layer.filter.resource) {
-      const resourceRequest = resourceRequestMap[layer.filter.resource];
-      if (resourceRequest && !resourceRequest.loading && !resourceRequest.error && resourceRequest.resource) {
-        resources.push(resourceRequest.resource);
-      }
+    const resourceRequest = resourceRequestMap[getResourceRequestKey(ref.name, ref.sourceId)];
+    if (resourceRequest && !resourceRequest.loading && !resourceRequest.error && resourceRequest.resource) {
+      return [resourceRequest.resource];
     }
-
-    return resources;
+    return [];
   }
 
   function onTimelineItemsDrop(
@@ -865,6 +891,7 @@
       {rowDragMoveDisabled}
       {layers}
       resources={loadedResources}
+      {timelineSources}
       yAxes={yAxesWithScaleDomains}
       {rowHeaderDragHandleWidthPx}
       on:mouseDownRowMove
@@ -951,7 +978,7 @@
             filter={layer.filter.resource}
             {mousemove}
             {mouseout}
-            resources={getResourcesForLayer(layer, resourceRequestMap)}
+            resources={getResourcesForLayer(layer, resourceRequestMap, defaultSourceId)}
             {xScaleView}
             on:mouseOver={onMouseOver}
           />
@@ -964,7 +991,7 @@
             filter={layer.filter.resource}
             {mousemove}
             {mouseout}
-            resources={getResourcesForLayer(layer, resourceRequestMap)}
+            resources={getResourcesForLayer(layer, resourceRequestMap, defaultSourceId)}
             {xScaleView}
             on:mouseOver={onMouseOver}
             on:contextMenu
@@ -1026,7 +1053,7 @@
             filter={layer.filter.resource}
             {mousemove}
             {mouseout}
-            resources={getResourcesForLayer(layer, resourceRequestMap)}
+            resources={getResourcesForLayer(layer, resourceRequestMap, defaultSourceId)}
             {xScaleView}
             on:mouseOver={onMouseOver}
           />
@@ -1043,7 +1070,7 @@
             filter={layer.filter.resource}
             {mousemove}
             {mouseout}
-            resources={getResourcesForLayer(layer, resourceRequestMap)}
+            resources={getResourcesForLayer(layer, resourceRequestMap, defaultSourceId)}
             {viewTimeRange}
             {xScaleView}
             yAxes={yAxesWithScaleDomains}

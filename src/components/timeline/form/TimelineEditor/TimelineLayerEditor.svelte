@@ -6,12 +6,15 @@
   import DuplicateIcon from '@nasa-jpl/stellar/icons/duplicate.svg?component';
   import FilterIcon from '@nasa-jpl/stellar/icons/filter.svg?component';
   import { createEventDispatcher } from 'svelte';
+  import { readable } from 'svelte/store';
   import TimelineLineLayerIcon from '../../../../assets/timeline-line-layer.svg?component';
   import TimelineXRangeLayerIcon from '../../../../assets/timeline-x-range-layer.svg?component';
   import { ViewDiscreteLayerColorPresets, ViewLineLayerColorPresets } from '../../../../constants/view';
   import { externalResourceNames, resourceTypes as modelResourceTypes } from '../../../../stores/simulation';
   import { getTimelineSourceCatalog } from '../../../../stores/timelineSourceCatalog';
+  import type { SelectedDropdownOptionValue } from '../../../../types/dropdown';
   import type { RadioButtonId } from '../../../../types/radio-buttons';
+  import type { TimelineSourceRegistry } from '../../../../types/timelineSource';
   import type {
     ActivityLayer,
     Axis,
@@ -22,6 +25,11 @@
     ResourceLayerFilter,
   } from '../../../../types/timeline';
   import { isActivityLayer, isExternalEventLayer, isLineLayer, isXRangeLayer } from '../../../../utilities/timeline';
+  import {
+    getResourceFilterName,
+    resolveResourceRef,
+    toResourceLayerFilter,
+  } from '../../../../utilities/timelineSources';
   import { tooltip } from '../../../../utilities/tooltip';
   import ColorPresetsPicker from '../../../form/ColorPresetsPicker.svelte';
   import ColorSchemePicker from '../../../form/ColorSchemePicker.svelte';
@@ -33,7 +41,10 @@
   import ExternalEventFilterBuilder from './ExternalEventFilterBuilder.svelte';
 
   // SPIKE: a non-plan page can supply its own resource catalog; the plan page falls back to the model's.
-  const resourceTypes = getTimelineSourceCatalog().resourceTypes ?? modelResourceTypes;
+  const catalog = getTimelineSourceCatalog();
+  const resourceTypes = catalog.resourceTypes ?? modelResourceTypes;
+  // SPIKE 2: with a source registry, a resource layer is edited as (source, resource).
+  const catalogSources = catalog.sources ?? readable<TimelineSourceRegistry | null>(null);
 
   export let layer: Layer;
   export let yAxes: Axis[] = [];
@@ -44,6 +55,8 @@
   let externalEventFilterMenu: ExternalEventFilterBuilder;
   let isColorScheme: boolean = false;
   let name: string = '';
+  let pickedSourceId: string | null = null;
+  let pickedForLayerId: number | null = null;
 
   const dispatch = createEventDispatcher<{
     colorChange: { color: string };
@@ -76,18 +89,57 @@
 
   $: name = getLayerName(layer);
 
-  $: resourceNames = $resourceTypes
-    .map(type => type.name)
-    .concat($externalResourceNames)
-    .sort();
+  $: registry = $catalogSources;
+  $: defaultSourceId = registry?.defaultSourceId ?? null;
+  $: resourceRef = resolveResourceRef(layer.filter.resource, defaultSourceId);
+  $: if (pickedForLayerId !== layer.id) {
+    // A different layer is being edited: forget the source picked for the previous one.
+    pickedForLayerId = layer.id;
+    pickedSourceId = null;
+  }
+  $: selectedSourceId = pickedSourceId ?? resourceRef?.sourceId ?? defaultSourceId;
+  $: sourceOptions = getSourceOptions(registry, selectedSourceId);
+  $: resourceNames = registry
+    ? (registry.sources.find(source => source.id === selectedSourceId)?.resourceTypes ?? [])
+        .map(type => type.name)
+        .sort()
+    : $resourceTypes
+        .map(type => type.name)
+        .concat($externalResourceNames)
+        .sort();
+
+  function getSourceOptions(registry: TimelineSourceRegistry | null, selectedSourceId: string | null) {
+    const options = (registry?.sources ?? []).map(source => ({ label: source.label, value: source.id }));
+    if (selectedSourceId && !options.find(option => option.value === selectedSourceId)) {
+      // The layer points at a source this page does not have; keep it visible rather than rebinding.
+      options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
+    }
+    return options;
+  }
+
+  function onSourceChange(event: Event) {
+    const sourceId = (event.currentTarget as HTMLSelectElement).value;
+    pickedSourceId = sourceId;
+    const currentName = resourceRef?.name ?? '';
+    const newSource = registry?.sources.find(source => source.id === sourceId);
+    const keepName = !!newSource?.resourceTypes.find(type => type.name === currentName);
+    dispatch('filterChange', { filter: toResourceLayerFilter(keepName ? currentName : '', sourceId, defaultSourceId) });
+  }
+
+  function onResourceChange(values: SelectedDropdownOptionValue[]) {
+    const resourceName = values.length && values[0] !== null ? `${values[0]}` : '';
+    dispatch('filterChange', {
+      filter: registry ? toResourceLayerFilter(resourceName, selectedSourceId, defaultSourceId) : resourceName,
+    });
+  }
 
   function getLayerName(layer: Layer) {
     if (isActivityLayer(layer)) {
       name = layer.name;
     } else if (isLineLayer(layer)) {
-      name = layer.name || layer.filter.resource || 'Line Layer';
+      name = layer.name || getResourceFilterName(layer.filter.resource) || 'Line Layer';
     } else if (isXRangeLayer(layer)) {
-      name = layer.name || layer.filter.resource || 'X-Range Layer';
+      name = layer.name || getResourceFilterName(layer.filter.resource) || 'X-Range Layer';
     } else if (isExternalEventLayer(layer)) {
       name = layer.name || 'Events Layer';
     }
@@ -178,17 +230,31 @@
         </button>
       </ActivityFilterBuilder>
     {:else if isLineLayer(layer) || isXRangeLayer(layer)}
+      {#if sourceOptions.length > 1}
+        <!-- SPIKE 2: explicit source control; only shown when the timeline has more than one source. -->
+        <select
+          aria-label="Resource source"
+          class="st-select layer-source"
+          value={selectedSourceId}
+          on:change={onSourceChange}
+          use:tooltip={{ content: 'Source', placement: 'top' }}
+        >
+          {#each sourceOptions as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      {/if}
       <SearchableDropdown
         maxListHeight="400px"
         selectedOptionLabel={layer.name}
-        selectTooltip={layer.filter.resource || 'Select Resource'}
+        selectTooltip={resourceRef?.name || 'Select Resource'}
         showPlaceholderOption={false}
         className="w-full"
         placeholder="Select Resource"
         searchPlaceholder="Filter resources"
-        selectedOptionValues={layer.filter.resource ? [layer.filter.resource] : []}
+        selectedOptionValues={resourceRef?.name ? [resourceRef.name] : []}
         options={resourceNames.map(resourceName => ({ display: resourceName, value: resourceName }))}
-        on:change={({ detail: values }) => dispatch('filterChange', { filter: values.length ? values[0] : '' })}
+        on:change={({ detail: values }) => onResourceChange(values)}
       >
         <ChevronDownIcon slot="icon" />
       </SearchableDropdown>
@@ -285,6 +351,10 @@
 
   .left {
     flex: 1;
+  }
+
+  .layer-source {
+    max-width: 45%;
   }
 
   .actions {

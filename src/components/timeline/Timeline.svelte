@@ -34,7 +34,7 @@
     Timeline,
     XAxisTick,
   } from '../../types/timeline';
-  import type { TimelineResourceProvider } from '../../types/timelineSource';
+  import type { TimelineSourceRegistry } from '../../types/timelineSource';
   import { clamp } from '../../utilities/generic';
   import { formatDate } from '../../utilities/time';
   import { MAX_CANVAS_SIZE, TimelineInteractionMode, TimelineLockStatus, getXScale } from '../../utilities/timeline';
@@ -60,7 +60,8 @@
   export let planEndTimeDoy: string;
   export let plan: Plan | null = null;
   export let planStartTimeYmd: string;
-  export let resourceProvider: TimelineResourceProvider | null = null;
+  /** SPIKE 2: every resource source this timeline can draw from (replaces the single provider). */
+  export let timelineSources: TimelineSourceRegistry | null = null;
   export let resourceTypes: ResourceType[] = [];
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
@@ -503,7 +504,7 @@
             {planEndTimeDoy}
             {plan}
             {planStartTimeYmd}
-            {resourceProvider}
+            {timelineSources}
             {rowDragMoveDisabled}
             {decimate}
             {interpolateHoverValue}
@@ -546,7 +547,14 @@
   </div>
 
   <!-- Timeline Tooltip. -->
-  <Tooltip bind:this={tooltip} {mouseOver} {interpolateHoverValue} hidden={!showTimelineTooltip} {resourceTypes} />
+  <Tooltip
+    bind:this={tooltip}
+    {mouseOver}
+    {interpolateHoverValue}
+    hidden={!showTimelineTooltip}
+    resourceTypes={timelineSources ? timelineSources.sources.flatMap(source => source.resourceTypes) : resourceTypes}
+    {timelineSources}
+  />
 
   <!-- Timeline Context Menu. -->
   <TimelineContextMenu

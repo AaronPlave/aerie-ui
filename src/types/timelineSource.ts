@@ -22,11 +22,41 @@ export interface TimelineResourceProvider {
    */
   readonly key: string;
   /**
+   * SPIKE 2: which source this provider serves; what resource layers bind to (ResourceRef.sourceId).
+   * Stable for the life of a view. Distinct from `key`: the plan's simulation source keeps its
+   * sourceId across re-simulation while its key (the dataset it currently reads) changes.
+   */
+  readonly sourceId: TimelineSourceId;
+  /**
    * `range` is part of the contract so a future provider can do bounded/viewport queries.
    * Every provider in the spike ignores it and fetches the whole profile.
    */
   subscribeResource(name: string, range?: TimeRange): TimelineResourceSubscription;
 }
+
+export type TimelineSourceId = string;
+
+/**
+ * SPIKE 2: one independent source of resources a timeline can draw from.
+ * `provider` is null while the source is not ready (e.g. no simulation yet); `resourceTypes` is the
+ * source's own catalog, whose entries are stamped with `sourceId` unless it is the default source.
+ */
+export type TimelineSource = {
+  id: TimelineSourceId;
+  label: string;
+  provider: TimelineResourceProvider | null;
+  resourceTypes: ResourceType[];
+  resourceTypesLoading?: boolean;
+};
+
+/**
+ * SPIKE 2: every source one timeline can see. Legacy (bare-string) resource layers and
+ * unstamped resource records resolve against `defaultSourceId`.
+ */
+export type TimelineSourceRegistry = {
+  defaultSourceId: TimelineSourceId | null;
+  sources: TimelineSource[];
+};
 
 /**
  * Standalone metadata record (merlin.standalone_dataset). Spike terminology.
@@ -48,5 +78,7 @@ export type TimelineSourceCatalog = {
   intervalTypes?: Readable<ActivityType[]>;
   maxTimeRange?: Readable<TimeRange>;
   resourceTypes?: Readable<ResourceType[]>;
+  /** SPIKE 2: source-specific resource catalogs + providers. Supersedes `resourceTypes` when present. */
+  sources?: Readable<TimelineSourceRegistry>;
   spans?: Readable<Span[] | null>;
 };

@@ -174,9 +174,25 @@
       "additionalProperties": false,
       "properties": {
         "resource": {
-          "additionalProperties": false,
-          "description": "Resource to display in this layer",
-          "type": "string"
+          "description": "Resource to display in this layer. A string names a resource in the timeline's default source (the plan simulation); an object names a resource in a specific source (SPIKE 2).",
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "sourceId": {
+                  "type": "string"
+                }
+              },
+              "required": ["name", "sourceId"],
+              "type": "object"
+            }
+          ]
         }
       },
       "type": "object"

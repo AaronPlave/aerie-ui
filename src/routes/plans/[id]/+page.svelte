@@ -18,7 +18,7 @@
   } from 'lucide-svelte';
   import type { PaneAPI } from 'paneforge';
   import { onDestroy } from 'svelte';
-  import { get } from 'svelte/store';
+  import { get, writable } from 'svelte/store';
   import ActivityDirectiveBuilder from '../../../components/activity/ActivityDirectiveBuilder.svelte';
   import Nav from '../../../components/app/Nav.svelte';
   import PageTitle from '../../../components/app/PageTitle.svelte';
@@ -162,6 +162,11 @@
   import { tooltip } from '../../../utilities/tooltip';
   import { getSearchParameterNumber, removeQueryParam, setQueryParam } from '../../../utilities/url';
   import { generateDefaultView } from '../../../utilities/view';
+  import { setTimelineSourceCatalog } from '../../../stores/timelineSourceCatalog';
+  import { createPlanTimelineSourceRegistry } from '../../../stores/timelineSources';
+  import type { TimelineSource } from '../../../types/timelineSource';
+  import { createStandaloneTimelineSource } from '../../../utilities/timelineResourceProviders';
+  import { getStandaloneSourceId } from '../../../utilities/timelineSources';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -171,6 +176,39 @@
   const defaultLogLevels: LogLevel[] = ['error', 'warn', 'info'];
 
   const user = getUserStore();
+
+  // SPIKE 2 (multi-source timelines): besides the plan's own simulation, attach independent
+  // standalone datasets named by `?standaloneDataset=<id>[,<id>...]`. Temporary selection mechanism;
+  // deliberately not plan_dataset (which would also claim ownership of the merlin.dataset).
+  const attachedTimelineSources = writable<TimelineSource[]>([]);
+  const attachedStandaloneDatasetIds = ($page.url.searchParams.get('standaloneDataset') ?? '')
+    .split(',')
+    .map(id => parseInt(id, 10))
+    .filter(id => !Number.isNaN(id));
+  attachedTimelineSources.set(
+    attachedStandaloneDatasetIds.map(id => ({
+      id: getStandaloneSourceId(id),
+      label: `Standalone dataset ${id} (loading)`,
+      provider: null,
+      resourceTypes: [],
+      resourceTypesLoading: true,
+    })),
+  );
+  Promise.all(attachedStandaloneDatasetIds.map(id => effects.getStandaloneDataset(id, get(user)))).then(results => {
+    attachedTimelineSources.set(
+      results.map((result, i) =>
+        result
+          ? createStandaloneTimelineSource(result.standaloneDataset, result.resourceTypes, get(user))
+          : {
+              id: getStandaloneSourceId(attachedStandaloneDatasetIds[i]),
+              label: `Standalone dataset ${attachedStandaloneDatasetIds[i]} (not found)`,
+              provider: null,
+              resourceTypes: [],
+            },
+      ),
+    );
+  });
+  setTimelineSourceCatalog({ sources: createPlanTimelineSourceRegistry(get(user), attachedTimelineSources) });
 
   let activityErrorCounts: ActivityErrorCounts = {
     all: 0,

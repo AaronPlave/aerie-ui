@@ -4,7 +4,8 @@ import { createProfileSubscription } from '../stores/profile';
 import type { User } from '../types/app';
 import type { Plan } from '../types/plan';
 import type { ResourceType, SimulationDataset } from '../types/simulation';
-import type { StandaloneDataset, TimelineResourceProvider } from '../types/timelineSource';
+import type { StandaloneDataset, TimelineResourceProvider, TimelineSource } from '../types/timelineSource';
+import { getStandaloneSourceId, PLAN_SIMULATION_SOURCE_ID } from './timelineSources';
 
 /**
  * The plan page's existing behavior, moved out of Row.svelte unchanged: a resource is either a
@@ -20,6 +21,7 @@ export function createPlanTimelineResourceProvider(
   const simProfileStartYmd = simulationDataset.simulation_start_time ?? plan.start_time;
   return {
     key: `plan-simulation:${simulationDataset.dataset_id}`,
+    sourceId: PLAN_SIMULATION_SOURCE_ID,
     subscribeResource(name) {
       const isExternal = !modelResourceTypes.find(type => type.name === name);
       // External datasets are matched by the simulation_dataset *id* (what
@@ -31,6 +33,27 @@ export function createPlanTimelineResourceProvider(
         ? createExternalResourceSubscription(simulationDataset.id, name, plan.start_time, user)
         : createProfileSubscription(simulationDataset.dataset_id, name, simProfileStartYmd, user);
     },
+  };
+}
+
+/**
+ * SPIKE 2: the standalone dataset as a registry entry. Its catalog is stamped with the source id so
+ * layers created from it (drag/drop, "add to row") are source-qualified.
+ */
+export function createStandaloneTimelineSource(
+  standaloneDataset: StandaloneDataset,
+  resourceTypes: ResourceType[],
+  user: User | null,
+  stampResourceTypes: boolean = true,
+): TimelineSource {
+  const provider = createStandaloneTimelineResourceProvider(standaloneDataset, user);
+  return {
+    id: provider.sourceId,
+    label: standaloneDataset.name,
+    provider,
+    resourceTypes: stampResourceTypes
+      ? resourceTypes.map(type => ({ ...type, sourceId: provider.sourceId }))
+      : resourceTypes,
   };
 }
 
@@ -48,6 +71,7 @@ export function createStandaloneTimelineResourceProvider(
 ): TimelineResourceProvider {
   return {
     key: `standalone:${standaloneDataset.dataset_id}`,
+    sourceId: getStandaloneSourceId(standaloneDataset.id),
     subscribeResource(name) {
       return createProfileSubscription(standaloneDataset.dataset_id, name, standaloneDataset.start_time, user);
     },

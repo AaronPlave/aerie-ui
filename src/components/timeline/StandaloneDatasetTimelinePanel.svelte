@@ -28,10 +28,10 @@
     TimeRange,
     Timeline as TimelineType,
   } from '../../types/timeline';
-  import type { StandaloneDataset, TimelineResourceProvider } from '../../types/timelineSource';
+  import type { StandaloneDataset, TimelineSourceRegistry } from '../../types/timelineSource';
   import { createSpanUtilityMaps } from '../../utilities/activities';
   import effects from '../../utilities/effects';
-  import { createStandaloneTimelineResourceProvider } from '../../utilities/timelineResourceProviders';
+  import { createStandaloneTimelineSource } from '../../utilities/timelineResourceProviders';
   import Panel from '../ui/Panel.svelte';
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import Timeline from './Timeline.svelte';
@@ -54,10 +54,15 @@
   let timeline: TimelineType | undefined;
   let timelines: TimelineType[] = [];
   let timelineRef: Timeline;
-  let resourceProvider: TimelineResourceProvider;
+  let timelineSources: TimelineSourceRegistry;
   let spansMap: SpansMap = {};
 
-  $: resourceProvider = createStandaloneTimelineResourceProvider(standaloneDataset, user);
+  // SPIKE 2: a one-source registry; the dataset is its own default source, so its catalog stays
+  // unstamped and layers keep the bare-string form.
+  $: {
+    const source = createStandaloneTimelineSource(standaloneDataset, resourceTypes, user, false);
+    timelineSources = { defaultSourceId: source.id, sources: [source] };
+  }
   $: spansMap = keyBy(spans, 'span_id');
   $: spanUtilityMaps = createSpanUtilityMaps(spans);
 
@@ -148,7 +153,7 @@
       planEndTimeDoy=""
       plan={null}
       planStartTimeYmd={standaloneDataset.start_time}
-      {resourceProvider}
+      {timelineSources}
       {resourceTypes}
       showTimeDisplay
       {timeline}

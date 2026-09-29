@@ -54,6 +54,7 @@ import { generateRandomPastelColor } from './color';
 import { getExternalEventRowId } from './externalEvents';
 import { filterEmpty, lowercase, stringCompare } from './generic';
 import { getDoyTime } from './time';
+import { resourceMatchesFilter, toResourceLayerFilter } from './timelineSources';
 
 export enum TimelineLockStatus {
   Locked = 'Locked',
@@ -624,7 +625,9 @@ export function createTimelineExternalEventLayer(
 }
 
 export function createTimelineResourceLayer(timelines: Timeline[], resourceType: ResourceType) {
-  const { name, schema } = resourceType;
+  const { name, schema, sourceId } = resourceType;
+  // SPIKE 2: catalog entries from a non-default source carry sourceId; keep it on the layer.
+  const resource = toResourceLayerFilter(name, sourceId, null);
   const { type: schemaType } = schema;
 
   const unit = schema.metadata?.unit?.value;
@@ -641,9 +644,9 @@ export function createTimelineResourceLayer(timelines: Timeline[], resourceType:
   });
 
   const layer = isDiscreteSchema
-    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name } })
+    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource } })
     : isNumericSchema
-      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name } })
+      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource } })
       : null;
 
   return { layer, yAxis };
@@ -705,6 +708,7 @@ export function getYAxisBounds(
   layers: Layer[],
   resources: Resource[],
   viewTimeRange?: TimeRange,
+  defaultSourceId?: string | null,
 ): number[] {
   // Find all layers that are associated with this y axis
   const yAxisLayers = layers.filter(layer => layer.yAxisId === yAxis.id);
@@ -713,7 +717,7 @@ export function getYAxisBounds(
   let minY: number | undefined = undefined;
   let maxY: number | undefined = undefined;
   yAxisLayers.forEach(layer => {
-    const layerResource = getResourceForLayer(layer, resources) as Resource;
+    const layerResource = getResourceForLayer(layer, resources, defaultSourceId) as Resource;
     if (layerResource) {
       let leftValue: ResourceValue | undefined;
       let rightValue: ResourceValue | undefined;
@@ -799,10 +803,11 @@ export function getYAxesWithScaleDomains(
   layers: Layer[],
   resources: Resource[],
   viewTimeRange: TimeRange,
+  defaultSourceId?: string | null,
 ): Axis[] {
   return yAxes.map(yAxis => {
     if (yAxis.domainFitMode !== 'manual') {
-      const scaleDomain = getYAxisBounds(yAxis, layers, resources, viewTimeRange);
+      const scaleDomain = getYAxisBounds(yAxis, layers, resources, viewTimeRange, defaultSourceId);
       return { ...yAxis, scaleDomain };
     }
     return yAxis;
@@ -947,8 +952,13 @@ export function minMaxDecimation<T>(
 /**
  * Filters list of resources by the layer's resource filter
  */
-export function getResourceForLayer(layer: Layer, resources: Resource[] | ResourceType[]) {
-  return resources.find(resource => layer.filter.resource === resource.name);
+export function getResourceForLayer(
+  layer: Layer,
+  resources: Resource[] | ResourceType[],
+  defaultSourceId?: string | null,
+) {
+  // SPIKE 2: match on (source, name); two sources may both have a resource with this name.
+  return resources.find(resource => resourceMatchesFilter(resource, layer.filter.resource, defaultSourceId));
 }
 
 /**

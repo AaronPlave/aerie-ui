@@ -41,6 +41,8 @@ export type ProfileSegment = {
 export type Resource = {
   name: string;
   schema: ValueSchema;
+  /** SPIKE 2: source the resource was loaded from. Absent means the timeline's default source. */
+  sourceId?: string;
   values: ResourceValue[];
 };
 
@@ -56,6 +58,8 @@ export type ResourceRequest = {
 export type ResourceType = {
   name: string;
   schema: ValueSchema;
+  /** SPIKE 2: catalog source of this type. Absent means the timeline's default source. */
+  sourceId?: string;
 };
 
 export type ResourceValue = {

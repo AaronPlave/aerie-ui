@@ -1,6 +1,7 @@
 <svelte:options immutable={true} />
 
 <script lang="ts">
+  import { readable } from 'svelte/store';
   import {
     activityDirectivesMap,
     initialActivityDirectivesLoading,
@@ -17,7 +18,6 @@
   import {
     initialSpansLoading,
     resourceTypes,
-    resourceTypesLoading,
     selectedSpanId,
     simulation,
     simulationDataset,
@@ -26,6 +26,8 @@
     spansMap,
     yAxesWithScaleDomainsCache,
   } from '../../stores/simulation';
+  import { getTimelineSourceCatalog } from '../../stores/timelineSourceCatalog';
+  import { createPlanTimelineSourceRegistry } from '../../stores/timelineSources';
   import {
     timelineInteractionMode,
     timelineLockStatus,
@@ -45,11 +47,10 @@
     Row,
     Timeline as TimelineType,
   } from '../../types/timeline';
-  import type { TimelineResourceProvider } from '../../types/timelineSource';
+  import type { TimelineSourceRegistry } from '../../types/timelineSource';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
   import { featurePermissions } from '../../utilities/permissions';
-  import { createPlanTimelineResourceProvider } from '../../utilities/timelineResourceProviders';
   import Panel from '../ui/Panel.svelte';
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import Timeline from './Timeline.svelte';
@@ -68,20 +69,18 @@
   let interpolateHoverValue = false;
   let limitTooltipToLine = false;
   let showTimelineTooltip = true;
-  let resourceProvider: TimelineResourceProvider | null = null;
+  let timelineSources: TimelineSourceRegistry | null = null;
 
   $: if (user !== null && $plan !== null) {
     hasUpdateDirectivePermission = featurePermissions.activityDirective.canUpdate(user, $plan) && !$planReadOnly;
     hasUpdateSimulationPermission = featurePermissions.simulation.canUpdate(user, $plan) && !$planReadOnly;
   }
 
-  // Same gating Row.svelte used to apply itself: no sim dataset -> no resources; while model
-  // resource types load, keep the current provider rather than misclassifying names as external.
-  $: if ($simulationDataset === null) {
-    resourceProvider = null;
-  } else if ($plan && !$resourceTypesLoading) {
-    resourceProvider = createPlanTimelineResourceProvider($plan, $simulationDataset, $resourceTypes, user);
-  }
+  // SPIKE 2: the plan page supplies a registry (plan simulation + attached sources). Without one,
+  // fall back to a registry holding only the plan's own simulation, built exactly as in Spike 1.
+  const catalogSources = getTimelineSourceCatalog().sources;
+  const fallbackSources = catalogSources ?? createPlanTimelineSourceRegistry(user, readable([]));
+  $: timelineSources = $fallbackSources;
 
   $: timelines = $view?.definition.plan.timelines || [];
   $: timeline = timelines.find(timeline => {
@@ -251,7 +250,7 @@
       planEndTimeDoy={$plan?.end_time_doy ?? ''}
       plan={$plan}
       planStartTimeYmd={$plan?.start_time ?? ''}
-      {resourceProvider}
+      {timelineSources}
       resourceTypes={$resourceTypes}
       {timeline}
       timelineInteractionMode={$timelineInteractionMode}

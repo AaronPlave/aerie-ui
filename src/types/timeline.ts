@@ -203,7 +203,17 @@ export type QuadtreeRect = {
   y: number;
 };
 
-export type ResourceLayerFilter = string;
+/**
+ * SPIKE 2 (multi-source timelines): a resource layer binds to a source-qualified reference.
+ * A bare string is the legacy form and means "this name in the timeline's default source"
+ * (the plan's simulation on the plan page), so existing views load unchanged.
+ */
+export type ResourceLayerFilter = string | ResourceRef;
+
+export type ResourceRef = {
+  name: string;
+  sourceId: string;
+};
 
 export type ActivityOptions = {
   // Whether or not to display only directives, only spans, or both in the row
