@@ -419,6 +419,16 @@ export function viewUpdateRow(
   rowId?: number | null,
   shouldSyncChange?: boolean | null,
 ) {
+  viewUpdateRowProperties({ [prop]: value }, timelineId, rowId, shouldSyncChange);
+}
+
+/** Updates several properties of a row in one store update, for changes that must not be applied partially. */
+export function viewUpdateRowProperties(
+  properties: Partial<Row>,
+  timelineId?: number | null,
+  rowId?: number | null,
+  shouldSyncChange?: boolean | null,
+) {
   timelineId = timelineId ?? get<number | null>(selectedTimelineId);
   rowId = rowId ?? get<number | null>(selectedRowId);
 
@@ -438,7 +448,7 @@ export function viewUpdateRow(
                     if (row.id === rowId) {
                       return {
                         ...row,
-                        [prop]: value,
+                        ...properties,
                       };
                     }
                     return row;
@@ -471,7 +481,7 @@ export function viewUpdateRow(
                       if (row.id === rowId) {
                         return {
                           ...row,
-                          [prop]: value,
+                          ...properties,
                         };
                       }
                       return row;

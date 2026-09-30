@@ -708,19 +708,24 @@ export type ResourceLayerBinding = {
   sourceLabel?: string;
 };
 
+export type ReboundResourceRow = Pick<Row, 'horizontalGuides' | 'layers' | 'yAxes'>;
+
 /**
  * Rebinds a resource layer to another source and/or resource, refreshing everything derived from the resource
  * declaration (chart type, axis label, unit and scale) with the same rules as `createTimelineResourceLayer`.
  * The layer keeps its id and, while the resource stays in the same schema family, its styling; its axis is
  * updated in place unless other layers share it, in which case the layer gets its own axis and the shared one
- * is left untouched. Returns the row's new layers and axes.
+ * is left untouched, with its guides. Horizontal guides on an axis the layer keeps survive only when the axis
+ * still measures the same quantity: same resource name, schema family and unit; otherwise they are removed
+ * rather than silently reinterpreted (500 W must not become 500 kW). Returns the row's new layers, axes and
+ * guides, to be applied as one update.
  */
 export function rebindResourceLayer(
   timelines: Timeline[],
-  row: Pick<Row, 'layers' | 'yAxes'>,
+  row: ReboundResourceRow,
   layer: Layer,
   binding: ResourceLayerBinding,
-): { layers: Layer[]; yAxes: Axis[] } {
+): ReboundResourceRow {
   const { previousResourceType, resourceName, resourceType, sourceId, sourceLabel } = binding;
   const { sourceId: _previousSourceId, ...unbound } = layer; // eslint-disable-line @typescript-eslint/no-unused-vars
   let rebound: Layer = {
@@ -729,11 +734,16 @@ export function rebindResourceLayer(
     ...(sourceId ? { sourceId } : {}),
   };
   const replaceLayer = (next: Layer) => row.layers.map(l => (l.id === layer.id ? next : l));
+  const axis = row.yAxes.find(yAxis => yAxis.id === layer.yAxisId);
+  const axisShared = row.layers.some(other => other.id !== layer.id && other.yAxisId === layer.yAxisId);
+  // Guides of an axis this layer alone uses, for when that axis stops measuring what the guides were set on.
+  const guidesWithoutOwnAxis = () =>
+    axis && !axisShared ? row.horizontalGuides.filter(guide => guide.yAxisId !== axis.id) : row.horizontalGuides;
 
-  // Without a declaration there is nothing to derive a presentation from; it is refreshed once a resource that
-  // the source provides is selected.
+  // Without a declaration there is nothing to derive a presentation from; the axis is refreshed once a resource
+  // that the source provides is selected, but its guides no longer describe anything.
   if (!resourceType) {
-    return { layers: replaceLayer(rebound), yAxes: row.yAxes };
+    return { horizontalGuides: guidesWithoutOwnAxis(), layers: replaceLayer(rebound), yAxes: row.yAxes };
   }
 
   const presentation = getResourceLayerPresentation(resourceType, sourceId, sourceLabel);
@@ -759,12 +769,13 @@ export function rebindResourceLayer(
         : createTimelineLineLayer(timelines, [], { ...args, lineColor: getUniqueColorForLineLayer(row as Row) });
   }
 
-  // Scale settings only carry over when the values are still the same kind of quantity.
+  // Scale settings only carry over when the values are still the same kind of quantity. Guides are values of one
+  // specific resource, so they additionally need the same resource name (two unrelated % resources differ).
   const scaleStillValid =
     previousFamily !== null && previousFamily === presentation.family && previousUnit === presentation.unit;
-  const axis = row.yAxes.find(yAxis => yAxis.id === layer.yAxisId);
-  const axisShared = row.layers.some(other => other.id !== layer.id && other.yAxisId === layer.yAxisId);
+  const guidesStillValid = scaleStillValid && previousResourceType?.name === resourceName;
 
+  // A new axis for the layer starts without guides; a shared axis keeps its guides for its other layers.
   if (!axis || axisShared) {
     // Unique across the view and the row being edited, which may not be saved into `timelines` yet.
     const id = Math.max(getNextYAxisID(timelines), ...row.yAxes.map(yAxis => yAxis.id + 1));
@@ -773,7 +784,11 @@ export function rebindResourceLayer(
       label: { text: presentation.axisLabel },
       tickCount: presentation.tickCount,
     });
-    return { layers: replaceLayer({ ...rebound, yAxisId: yAxis.id }), yAxes: [...row.yAxes, yAxis] };
+    return {
+      horizontalGuides: row.horizontalGuides,
+      layers: replaceLayer({ ...rebound, yAxisId: yAxis.id }),
+      yAxes: [...row.yAxes, yAxis],
+    };
   }
 
   let updatedAxis: Axis = { ...axis, label: { ...axis.label, text: presentation.axisLabel } };
@@ -782,6 +797,7 @@ export function rebindResourceLayer(
     updatedAxis = { ...rest, domainFitMode: 'fitTimeWindow', tickCount: presentation.tickCount };
   }
   return {
+    horizontalGuides: guidesStillValid ? row.horizontalGuides : guidesWithoutOwnAxis(),
     layers: replaceLayer({ ...rebound, yAxisId: axis.id }),
     yAxes: row.yAxes.map(yAxis => (yAxis.id === axis.id ? updatedAxis : yAxis)),
   };

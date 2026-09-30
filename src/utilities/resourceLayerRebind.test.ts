@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { ResourceType } from '../types/simulation';
-import type { Axis, Layer, LineLayer, Row, Timeline } from '../types/timeline';
+import type { Axis, HorizontalGuide, Layer, LineLayer, Row, Timeline } from '../types/timeline';
 import {
   createRow,
   createTimelineResourceLayer,
@@ -36,13 +36,18 @@ describe('resource layer rebinding', () => {
     const { layer, row, timelines, yAxis } = setup(real('/battery/soc', '%'), 'external-dataset:50', 'Dataset 50');
     const styled = { ...(layer as LineLayer), lineColor: '#123456', lineWidth: 3 };
     const scaledAxis = { ...yAxis, domainFitMode: 'manual' as const, scaleDomain: [0, 100] };
-    const result = rebindResourceLayer(timelines, { layers: [styled], yAxes: [scaledAxis] }, styled, {
-      previousResourceType: real('/battery/soc', '%'),
-      resourceName: '/battery/soc',
-      resourceType: real('/battery/soc', '%'),
-      sourceId: 'external-dataset:51',
-      sourceLabel: 'Dataset 51',
-    });
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [], layers: [styled], yAxes: [scaledAxis] },
+      styled,
+      {
+        previousResourceType: real('/battery/soc', '%'),
+        resourceName: '/battery/soc',
+        resourceType: real('/battery/soc', '%'),
+        sourceId: 'external-dataset:51',
+        sourceLabel: 'Dataset 51',
+      },
+    );
     const [rebound] = result.layers as LineLayer[];
     expect(rebound).toMatchObject({
       chartType: 'line',
@@ -65,13 +70,18 @@ describe('resource layer rebinding', () => {
   test('same name, different unit: updates the unit and drops the old scale', () => {
     const { layer, timelines, yAxis } = setup(real('/power', 'W'), 'external-dataset:50', 'Dataset 50');
     const scaledAxis = { ...yAxis, domainFitMode: 'manual' as const, scaleDomain: [0, 100] };
-    const result = rebindResourceLayer(timelines, { layers: [layer], yAxes: [scaledAxis] }, layer, {
-      previousResourceType: real('/power', 'W'),
-      resourceName: '/power',
-      resourceType: real('/power', 'kW'),
-      sourceId: 'external-dataset:51',
-      sourceLabel: 'Dataset 51',
-    });
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [], layers: [layer], yAxes: [scaledAxis] },
+      layer,
+      {
+        previousResourceType: real('/power', 'W'),
+        resourceName: '/power',
+        resourceType: real('/power', 'kW'),
+        sourceId: 'external-dataset:51',
+        sourceLabel: 'Dataset 51',
+      },
+    );
     const axis = axisOf(result, layer.id);
     expect(axis?.label.text).toBe('/power (kW) · Dataset 51');
     expect(axis?.domainFitMode).toBe('fitTimeWindow');
@@ -81,7 +91,7 @@ describe('resource layer rebinding', () => {
 
   test('same name, different schema family: converts the layer the way creation would', () => {
     const { layer, timelines, yAxis } = setup(real('/mode'), 'external-dataset:50', 'Dataset 50');
-    const result = rebindResourceLayer(timelines, { layers: [layer], yAxes: [yAxis] }, layer, {
+    const result = rebindResourceLayer(timelines, { horizontalGuides: [], layers: [layer], yAxes: [yAxis] }, layer, {
       previousResourceType: real('/mode'),
       resourceName: '/mode',
       resourceType: variant('/mode'),
@@ -120,7 +130,7 @@ describe('resource layer rebinding', () => {
     const otherAxis = createYAxis(timelines, { label: { text: 'Other' } });
     const layers = [layer, sibling];
     const yAxes = [yAxis, otherAxis];
-    const result = rebindResourceLayer(timelines, { layers, yAxes }, layer, {
+    const result = rebindResourceLayer(timelines, { horizontalGuides: [], layers, yAxes }, layer, {
       previousResourceType: real('/battery/soc', '%'),
       resourceName: '/mode',
       resourceType: variant('/mode'),
@@ -136,7 +146,7 @@ describe('resource layer rebinding', () => {
 
   test('a resource the new source lacks clears the selection without inventing a presentation', () => {
     const { layer, timelines, yAxis } = setup(real('/battery/soc', '%'), 'external-dataset:50', 'Dataset 50');
-    const result = rebindResourceLayer(timelines, { layers: [layer], yAxes: [yAxis] }, layer, {
+    const result = rebindResourceLayer(timelines, { horizontalGuides: [], layers: [layer], yAxes: [yAxis] }, layer, {
       previousResourceType: real('/battery/soc', '%'),
       resourceName: '',
       resourceType: null,
@@ -149,7 +159,7 @@ describe('resource layer rebinding', () => {
 
   test('rebinding to the legacy lookup removes the binding, and the result survives save/reload', () => {
     const { layer, timelines, yAxis } = setup(real('/battery/soc', '%'), 'external-dataset:50', 'Dataset 50');
-    const result = rebindResourceLayer(timelines, { layers: [layer], yAxes: [yAxis] }, layer, {
+    const result = rebindResourceLayer(timelines, { horizontalGuides: [], layers: [layer], yAxes: [yAxis] }, layer, {
       previousResourceType: real('/battery/soc', '%'),
       resourceName: '/battery/soc',
       resourceType: real('/battery/soc', '%'),
@@ -169,5 +179,118 @@ describe('resource layer rebinding', () => {
       tickCount: 0,
       unit: undefined,
     });
+  });
+});
+
+describe('horizontal guides during resource rebinding', () => {
+  const guideOn = (yAxisId: number, y: number, id = 0): HorizontalGuide => ({
+    id,
+    label: { text: `${y}` },
+    y,
+    yAxisId,
+  });
+  const toB = (resourceType: ResourceType | null, resourceName = resourceType?.name ?? '') => ({
+    resourceName,
+    resourceType,
+    sourceId: 'external-dataset:51',
+    sourceLabel: 'Dataset 51',
+  });
+
+  test('same name, family and unit: the guide stays, unchanged, on the same axis', () => {
+    const { layer, timelines, yAxis } = setup(real('/soc', '%'), 'external-dataset:50', 'Dataset 50');
+    const guide = guideOn(yAxis.id, 50);
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guide], layers: [layer], yAxes: [yAxis] },
+      layer,
+      {
+        previousResourceType: real('/soc', '%'),
+        ...toB(real('/soc', '%')),
+      },
+    );
+    expect(result.horizontalGuides).toEqual([guide]);
+    expect(result.layers[0].yAxisId).toBe(yAxis.id);
+  });
+
+  test('a unit change removes the guide (500 W is not 500 kW) and relabels and resets the axis', () => {
+    const { layer, timelines, yAxis } = setup(real('/power', 'W'), 'external-dataset:50', 'Dataset 50');
+    const scaled = { ...yAxis, domainFitMode: 'manual' as const, scaleDomain: [0, 1000] };
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guideOn(yAxis.id, 500)], layers: [layer], yAxes: [scaled] },
+      layer,
+      { previousResourceType: real('/power', 'W'), ...toB(real('/power', 'kW')) },
+    );
+    expect(result.horizontalGuides).toEqual([]);
+    expect(axisOf(result, layer.id)).toMatchObject({
+      domainFitMode: 'fitTimeWindow',
+      label: { text: '/power (kW) · Dataset 51' },
+    });
+    expect(axisOf(result, layer.id)?.scaleDomain).toBeUndefined();
+  });
+
+  test('another resource with the same family and unit still removes the guide', () => {
+    const { layer, timelines, yAxis } = setup(real('/soc', '%'), 'external-dataset:50', 'Dataset 50');
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guideOn(yAxis.id, 50)], layers: [layer], yAxes: [yAxis] },
+      layer,
+      { previousResourceType: real('/soc', '%'), ...toB(real('/dod', '%')) },
+    );
+    expect(result.horizontalGuides).toEqual([]);
+  });
+
+  test('a schema family change removes the guide and makes the layer an x-range', () => {
+    const { layer, timelines, yAxis } = setup(real('/mode'), 'external-dataset:50', 'Dataset 50');
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guideOn(yAxis.id, 1)], layers: [layer], yAxes: [yAxis] },
+      layer,
+      { previousResourceType: real('/mode'), ...toB(variant('/mode')) },
+    );
+    expect(result.horizontalGuides).toEqual([]);
+    expect(result.layers[0].chartType).toBe('x-range');
+  });
+
+  test('on a shared axis the guide stays for the other layer and the rebound layer gets a guide-less axis', () => {
+    const { layer, timelines, yAxis } = setup(real('/power', 'W'), 'external-dataset:50', 'Dataset 50');
+    const sibling = { ...layer, id: layer.id + 1 };
+    const guide = guideOn(yAxis.id, 500);
+    const result = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guide], layers: [layer, sibling], yAxes: [yAxis] },
+      layer,
+      { previousResourceType: real('/power', 'W'), ...toB(real('/power', 'kW')) },
+    );
+    expect(result.yAxes[0]).toBe(yAxis);
+    expect(result.layers[1]).toBe(sibling);
+    expect(result.horizontalGuides).toEqual([guide]);
+    const ownAxis = axisOf(result, layer.id);
+    expect(ownAxis?.id).not.toBe(yAxis.id);
+    expect(result.horizontalGuides.some(g => g.yAxisId === ownAxis?.id)).toBe(false);
+  });
+
+  test('losing the resource removes the guides of its own axis, but not of a shared one', () => {
+    const { layer, timelines, yAxis } = setup(real('/soc', '%'), 'external-dataset:50', 'Dataset 50');
+    const guide = guideOn(yAxis.id, 50);
+    const otherGuide = guideOn(yAxis.id + 100, 3, 1);
+    const unshared = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guide, otherGuide], layers: [layer], yAxes: [yAxis] },
+      layer,
+      { previousResourceType: real('/soc', '%'), ...toB(null, '') },
+    );
+    expect(unshared.layers[0].filter.resource).toBe('');
+    expect(unshared.yAxes).toEqual([yAxis]);
+    expect(unshared.horizontalGuides).toEqual([otherGuide]);
+
+    const sibling = { ...layer, id: layer.id + 1 };
+    const shared = rebindResourceLayer(
+      timelines,
+      { horizontalGuides: [guide], layers: [layer, sibling], yAxes: [yAxis] },
+      layer,
+      { previousResourceType: real('/soc', '%'), ...toB(null, '') },
+    );
+    expect(shared.horizontalGuides).toEqual([guide]);
   });
 });

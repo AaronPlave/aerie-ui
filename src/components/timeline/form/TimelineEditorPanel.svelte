@@ -35,6 +35,7 @@
     viewSetSelectedRow,
     viewSetSelectedTimeline,
     viewUpdateRow,
+    viewUpdateRowProperties,
     viewUpdateTimeline,
   } from '../../../stores/views';
   import type { RadioButtonId } from '../../../types/radio-buttons';
@@ -398,18 +399,17 @@
   }
 
   // A resource layer's presentation (chart type, axis label, unit, scale) follows the declaration of what it reads,
-  // so changing its source or resource re-derives it; the axis update and the layer update go out together.
+  // so changing its source or resource re-derives it. Layers, axes and guides change together in one update.
   function handleRebindResourceLayer(sourceId: string | null, resourceName: string, layer: Layer) {
     const registry = $timelineSources;
-    const rebound = rebindResourceLayer(timelines, { layers, yAxes }, layer, {
+    const rebound = rebindResourceLayer(timelines, { horizontalGuides, layers, yAxes }, layer, {
       previousResourceType: findResourceType(registry, layer.sourceId, layer.filter.resource),
       resourceName,
       resourceType: findResourceType(registry, sourceId, resourceName),
       sourceId: sourceId ?? undefined,
       sourceLabel: getSource(registry, sourceId)?.label,
     });
-    viewUpdateRow('yAxes', rebound.yAxes);
-    viewUpdateRow('layers', rebound.layers);
+    viewUpdateRowProperties(rebound);
   }
 
   function handleUpdateResourceLayerFilter(resourceName: string, layer: Layer) {
