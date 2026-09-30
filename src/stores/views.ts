@@ -747,11 +747,16 @@ export function viewAddFilterToRow(
   }
 }
 
-function getDefaultRowName(items: TimelineItemType[], typeName: string, metadata?: TimelineItemMetadata) {
+export function getDefaultRowName(items: TimelineItemType[], typeName: string, metadata?: TimelineItemMetadata) {
   const name = items.length === 1 ? items[0].name : `${capitalize(typeName)} Row`;
   const externalSources = metadata?.externalSources ?? [];
-  // A row of source-restricted events names the source, since the same type can come from several.
-  return externalSources.length === 1 ? `${name} · ${externalSources[0].source_key}` : name;
+  // A row of source-restricted events names its source, since the same type can come from several. Source keys
+  // are only unique within a derivation group, so the group is part of the name (as in the filter builder).
+  if (externalSources.length === 1) {
+    const [{ derivation_group_name, source_key }] = externalSources;
+    return `${name} · ${derivation_group_name} / ${source_key}`;
+  }
+  return externalSources.length > 1 ? `${name} · ${externalSources.length} sources` : name;
 }
 
 export function viewAddFilterItemsToRow(

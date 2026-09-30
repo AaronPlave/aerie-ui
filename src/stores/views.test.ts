@@ -6,7 +6,7 @@ import {
   createTimelineExternalEventLayer,
   externalEventSourceScopesEqual,
 } from '../utilities/timeline';
-import { getUpdatedLayerWithFilters } from './views';
+import { getDefaultRowName, getUpdatedLayerWithFilters } from './views';
 
 vi.mock('$env/dynamic/public', () => ({ env: {} }));
 vi.mock('$app/environment', () => ({ browser: true }));
@@ -125,5 +125,30 @@ describe('new resource layers are source-bound', () => {
     });
     expect(layer.sourceId).toBe('external-dataset:50');
     expect(yAxis?.label.text).toBe('/battery/soc · Dataset 50');
+  });
+});
+
+describe('default names of new external event rows', () => {
+  const pass = { attribute_schema: {}, name: 'Pass' };
+  const scoped = (derivation_group_name: string, source_key: string) => ({
+    externalSources: [{ derivation_group_name, source_key }],
+    sourceId: null,
+  });
+
+  test('the same source key in two derivation groups gives two distinct names', () => {
+    expect(getDefaultRowName([pass], 'externalEvent', scoped('DG A', 'source-1'))).toBe('Pass · DG A / source-1');
+    expect(getDefaultRowName([pass], 'externalEvent', scoped('DG B', 'source-1'))).toBe('Pass · DG B / source-1');
+  });
+
+  test('several sources are counted, and type-only items keep the legacy default', () => {
+    expect(
+      getDefaultRowName([pass], 'externalEvent', {
+        externalSources: [...scoped('DG A', 'source-1').externalSources, ...scoped('DG B', 'source-1').externalSources],
+      }),
+    ).toBe('Pass · 2 sources');
+    expect(getDefaultRowName([pass], 'externalEvent', {})).toBe('Pass');
+    expect(getDefaultRowName([pass, { attribute_schema: {}, name: 'Eclipse' }], 'externalEvent')).toBe(
+      'Externalevent Row',
+    );
   });
 });
