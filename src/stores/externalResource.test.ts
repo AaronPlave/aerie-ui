@@ -213,6 +213,26 @@ describe('createExternalResourceSubscription', () => {
     expect(firstCall[0]).toBe(2); // datasetId from the sim-tied row, not the plan-level one
   });
 
+  test('legacy /power reads the sim-tied kW row even when the plan-level W row comes first', async () => {
+    getExternalProfileSegmentsSinceMock.mockResolvedValue(segments([{ start_offset: '00:00:00', value: 1 }]));
+    const power = (id: number, unit: string): Profile => ({
+      ...makeProfile({ duration: '00:02:00', id, name: '/power' }),
+      type: { schema: { metadata: { unit: { value: unit } }, type: 'real' } as any, type: 'real' },
+    });
+    planDatasetsValue.set([
+      makePlanDataset({ datasetId: 50, profiles: [power(500, 'W')], simDatasetId: null }),
+      makePlanDataset({ datasetId: 51, profiles: [power(510, 'kW')], simDatasetId: 10 }),
+    ]);
+    planDatasetsLoading.set(false);
+
+    const sub = makeSub(10, '/power', '2024-01-01T00:00:00', null);
+    sub.store.subscribe(() => {});
+    await flushPromises();
+
+    const [firstCall] = getExternalProfileSegmentsSinceMock.mock.calls;
+    expect(firstCall[0]).toBe(51);
+  });
+
   test('plan-level (null sim) row is preferred over a non-matching sim row', async () => {
     getExternalProfileSegmentsSinceMock.mockResolvedValue(segments([{ start_offset: '00:00:00', value: 'A' }]));
 

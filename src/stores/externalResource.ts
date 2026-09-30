@@ -3,6 +3,7 @@ import type { User } from '../types/app';
 import type { Profile, ProfileSegment, Resource } from '../types/simulation';
 import effects from '../utilities/effects';
 import { INITIAL_SINCE, sampleProfiles } from '../utilities/resources';
+import { selectLegacyExternalProfile } from '../utilities/timelineSources';
 import { catchError } from './console';
 import { planDatasets } from './plan';
 import {
@@ -77,12 +78,10 @@ export function createExternalResourceSubscription(
   const unsubscribers: Array<() => void> = [];
 
   // Live metadata slice: pick the right plan_dataset row for (simDatasetId,
-  // name). Preference order: sim-matching > plan-level (null sim) > first
-  // encountered. Also surfaces "settling" so we don't flash a "not found"
-  // error during the initial subscription bootstrap.
+  // name) with the shared legacy precedence (selectLegacyExternalProfile).
+  // Also surfaces "settling" so we don't flash a "not found" error during the
+  // initial subscription bootstrap.
   type MetaResolution = { kind: 'settling' } | { kind: 'missing' } | { kind: 'found'; meta: ProfileMetadata };
-
-  type Candidate = { datasetId: number; offset: string; profile: Profile };
 
   const metadata: Readable<MetaResolution> = derived(
     [planDatasets, planDatasets.loading],
@@ -90,31 +89,12 @@ export function createExternalResourceSubscription(
       if ($loading) {
         return { kind: 'settling' };
       }
-      let plan: Candidate | null = null;
-      let planLevel: Candidate | null = null;
-      let fallback: Candidate | null = null;
-      for (const pd of $planDatasets) {
-        if (datasetId !== undefined && pd.dataset_id !== datasetId) {
-          continue;
-        }
-        const profile = pd.dataset.profiles.find(p => p.name === name);
-        if (!profile) {
-          continue;
-        }
-        const candidate: Candidate = { datasetId: pd.dataset_id, offset: pd.offset_from_plan_start, profile };
-        const simId = pd.simulation_dataset_id;
-        if (simDatasetId > -1 && simId === simDatasetId) {
-          plan = candidate;
-          break;
-        }
-        if (simId === null && planLevel === null) {
-          planLevel = candidate;
-        }
-        if (fallback === null) {
-          fallback = candidate;
-        }
-      }
-      const picked = plan ?? planLevel ?? fallback;
+      const picked = selectLegacyExternalProfile(
+        $planDatasets,
+        simDatasetId > -1 ? simDatasetId : null,
+        name,
+        datasetId,
+      );
       if (!picked) {
         return { kind: 'missing' };
       }
@@ -123,7 +103,7 @@ export function createExternalResourceSubscription(
         meta: {
           datasetId: picked.datasetId,
           duration: picked.profile.duration,
-          offsetFromPlanStart: picked.offset,
+          offsetFromPlanStart: picked.offsetFromPlanStart,
           profileId: picked.profile.id,
           type: picked.profile.type,
         },

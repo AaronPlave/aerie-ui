@@ -3,7 +3,7 @@ import type { TimelineResourceState } from '../stores/timelineResourceStatus';
 import type { ActivityType } from '../types/activity';
 import type { ExternalEvent, ExternalEventType } from '../types/external-event';
 import type { DerivationGroup, PlanDerivationGroup } from '../types/external-source';
-import type { PlanDataset, ResourceType, SimulationDataset, Span } from '../types/simulation';
+import type { PlanDataset, Profile, ResourceType, SimulationDataset, Span } from '../types/simulation';
 import type { Layer } from '../types/timeline';
 import type {
   SourceBrowserNode,
@@ -25,9 +25,87 @@ export function getExternalDatasetSourceId(datasetId: number): TimelineSourceId 
   return `${EXTERNAL_DATASET_SOURCE_PREFIX}${datasetId}`;
 }
 
+/** The external profile a legacy (unbound) resource name resolves to, and the plan_dataset row it comes from. */
+export type LegacyExternalProfileCandidate = {
+  datasetId: number;
+  offsetFromPlanStart: string;
+  profile: Profile;
+};
+
 /**
- * The declaration of a resource as a layer bound to `sourceId` would read it. An unbound (legacy) layer reads the
- * first source that provides the name, in registry order: the Plan's simulation, then attached datasets.
+ * Picks which plan_dataset row provides the external profile `name`. This is the one definition of the legacy
+ * merged-namespace precedence, used both to load the data (createExternalResourceSubscription) and to know what
+ * a legacy layer is displaying (findLegacyResourceType):
+ * 1. the row tied to the selected simulation dataset;
+ * 2. otherwise the first plan-level row (no simulation dataset);
+ * 3. otherwise the first row with the name, in `planDatasets` order.
+ * With `datasetId`, only that plan_dataset row is considered.
+ */
+export function selectLegacyExternalProfile(
+  planDatasets: PlanDataset[],
+  simulationDatasetId: number | null,
+  name: string,
+  datasetId?: number,
+): LegacyExternalProfileCandidate | null {
+  let planLevel: LegacyExternalProfileCandidate | null = null;
+  let fallback: LegacyExternalProfileCandidate | null = null;
+  for (const planDataset of planDatasets) {
+    if (datasetId !== undefined && planDataset.dataset_id !== datasetId) {
+      continue;
+    }
+    const profile = planDataset.dataset.profiles.find(p => p.name === name);
+    if (!profile) {
+      continue;
+    }
+    const candidate = {
+      datasetId: planDataset.dataset_id,
+      offsetFromPlanStart: planDataset.offset_from_plan_start,
+      profile,
+    };
+    if (simulationDatasetId !== null && planDataset.simulation_dataset_id === simulationDatasetId) {
+      return candidate;
+    }
+    if (planDataset.simulation_dataset_id === null && planLevel === null) {
+      planLevel = candidate;
+    }
+    if (fallback === null) {
+      fallback = candidate;
+    }
+  }
+  return planLevel ?? fallback;
+}
+
+export type LegacyResourceContext = {
+  /** The mission model's resource types: a name among them is read from the Plan's simulation. */
+  modelResourceTypes: ResourceType[];
+  planDatasets: PlanDataset[];
+  registry: TimelineSourceRegistry | null | undefined;
+  /** The selected simulation dataset's id (what plan_dataset.simulation_dataset_id references), if any. */
+  simulationDatasetId: number | null;
+};
+
+/**
+ * The declaration of the resource a legacy (unbound) layer is displaying, resolved exactly as the legacy loader
+ * in Row resolves its data: a model resource name reads the Plan's simulation, anything else the external profile
+ * chosen by selectLegacyExternalProfile. Registry order plays no part, so rebinding decisions (scale, guides,
+ * chart type) are based on what is actually on screen.
+ */
+export function findLegacyResourceType(context: LegacyResourceContext, name: string | undefined): ResourceType | null {
+  if (!name) {
+    return null;
+  }
+  const modelResourceType = context.modelResourceTypes.find(type => type.name === name);
+  if (modelResourceType) {
+    return findResourceType(context.registry, PLAN_SOURCE_ID, name) ?? modelResourceType;
+  }
+  const candidate = selectLegacyExternalProfile(context.planDatasets, context.simulationDatasetId, name);
+  return candidate ? { name, schema: candidate.profile.type.schema } : null;
+}
+
+/**
+ * The declaration of a resource as a layer bound to `sourceId` would read it. Without `sourceId` it returns the
+ * first source in registry order that provides the name; that is a catalog lookup, not what a legacy layer
+ * displays (use findLegacyResourceType for that).
  */
 export function findResourceType(
   registry: TimelineSourceRegistry | null | undefined,

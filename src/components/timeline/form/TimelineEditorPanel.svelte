@@ -23,9 +23,9 @@
   import ActivityModeWidthIcon from '../../../assets/width.svg?component';
   import { ViewDefaultDiscreteOptions } from '../../../constants/view';
   import { ViewConstants } from '../../../enums/view';
-  import { maxTimeRange, viewTimeRange } from '../../../stores/plan';
+  import { maxTimeRange, planDatasets, viewTimeRange } from '../../../stores/plan';
   import { plugins } from '../../../stores/plugins';
-  import { yAxesWithScaleDomainsCache } from '../../../stores/simulation';
+  import { resourceTypes, simulationDataset, yAxesWithScaleDomainsCache } from '../../../stores/simulation';
   import { timelineSources } from '../../../stores/timelineSources';
   import {
     selectedRowId,
@@ -74,7 +74,12 @@
     isXRangeLayer,
     rebindResourceLayer,
   } from '../../../utilities/timeline';
-  import { findResourceType, getSource, PLAN_SOURCE_ID } from '../../../utilities/timelineSources';
+  import {
+    findLegacyResourceType,
+    findResourceType,
+    getSource,
+    PLAN_SOURCE_ID,
+  } from '../../../utilities/timelineSources';
   import { tooltip } from '../../../utilities/tooltip';
   import ColorPicker from '../../form/ColorPicker.svelte';
   import Input from '../../form/Input.svelte';
@@ -402,10 +407,20 @@
   // so changing its source or resource re-derives it. Layers, axes and guides change together in one update.
   function handleRebindResourceLayer(sourceId: string | null, resourceName: string, layer: Layer) {
     const registry = $timelineSources;
+    // A bound layer reads its own source; an unbound (legacy) layer reads whatever the legacy loader picks, which
+    // is not registry order (e.g. a dataset tied to the selected simulation beats a plan-level one).
+    const legacy = {
+      modelResourceTypes: $resourceTypes,
+      planDatasets: $planDatasets,
+      registry,
+      simulationDatasetId: $simulationDataset?.id ?? null,
+    };
+    const declarationOf = (id: string | null | undefined, name: string | undefined) =>
+      id ? findResourceType(registry, id, name) : findLegacyResourceType(legacy, name);
     const rebound = rebindResourceLayer(timelines, { horizontalGuides, layers, yAxes }, layer, {
-      previousResourceType: findResourceType(registry, layer.sourceId, layer.filter.resource),
+      previousResourceType: declarationOf(layer.sourceId, layer.filter.resource),
       resourceName,
-      resourceType: findResourceType(registry, sourceId, resourceName),
+      resourceType: declarationOf(sourceId, resourceName),
       sourceId: sourceId ?? undefined,
       sourceLabel: getSource(registry, sourceId)?.label,
     });

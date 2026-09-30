@@ -9,13 +9,17 @@ import {
   createPlanSimulationSource,
   EXTERNAL_EVENTS_SOURCE_ID,
   filterSourceBrowserNodes,
+  findLegacyResourceType,
+  findResourceType,
   getExternalDatasetSourceId,
   getLayerResourceRequestKey,
   getResourceRequestKey,
   PLAN_SOURCE_ID,
   resolveActivityLayerSourceId,
   resolveResourceLayerSource,
+  selectLegacyExternalProfile,
 } from './timelineSources';
+import { createTimelineResourceLayer, createRow, rebindResourceLayer } from './timeline';
 
 const soc: ResourceType = { name: '/battery/soc', schema: { type: 'real' } };
 
@@ -204,5 +208,110 @@ describe('source browser adapters', () => {
     expect(filtered.map(node => [node.label, node.children?.map(child => child.label)])).toEqual([
       ['Resources (1)', ['/battery/soc']],
     ]);
+  });
+});
+
+describe('legacy resource resolution', () => {
+  // A dataset with one real profile of the given unit, tied to a simulation dataset or plan-level (null).
+  const dataset = (datasetId: number, simulationDatasetId: number | null, name: string, unit: string): PlanDataset => ({
+    dataset: {
+      profiles: [
+        {
+          dataset_id: datasetId,
+          duration: '24:00:00',
+          id: datasetId * 100,
+          name,
+          profile_segments: [],
+          type: { schema: { metadata: { unit: { value: unit } }, type: 'real' }, type: 'real' },
+        } as PlanDataset['dataset']['profiles'][number],
+      ],
+    },
+    dataset_id: datasetId,
+    offset_from_plan_start: '00:00:00',
+    simulation_dataset_id: simulationDatasetId,
+  });
+  const unitOf = (type: ResourceType | null) => type?.schema.metadata?.unit?.value;
+  const legacyContext = (
+    planDatasets: PlanDataset[],
+    simulationDatasetId: number | null,
+    modelResourceTypes = [soc],
+  ) => {
+    const sources = createExternalDatasetSources({
+      planDatasets,
+      simulationDatasetId: simulationDatasetId ?? -1,
+      subscribeExternal: vi.fn(staticSubscription) as any,
+    });
+    return {
+      modelResourceTypes,
+      planDatasets,
+      registry: { loading: false, sources: [planSource({ dataset_id: 40, id: 10 } as SimulationDataset), ...sources] },
+      simulationDatasetId,
+    };
+  };
+  // Dataset 50 (plan-level, W) comes first in both planDatasets and the registry; Dataset 51 (kW) is tied to sim 10.
+  const datasets = [dataset(50, null, '/power', 'W'), dataset(51, 10, '/power', 'kW')];
+
+  test('the selected-simulation dataset wins over registry order, for data and declaration alike', () => {
+    const context = legacyContext(datasets, 10);
+    expect(context.registry.sources.map(source => source.id).slice(1)).toEqual([
+      'external-dataset:50',
+      'external-dataset:51',
+    ]);
+    expect(unitOf(findResourceType(context.registry, undefined, '/power'))).toBe('W'); // registry order: not used
+    expect(selectLegacyExternalProfile(datasets, 10, '/power')?.datasetId).toBe(51);
+    expect(unitOf(findLegacyResourceType(context, '/power'))).toBe('kW');
+  });
+
+  test('a model resource still reads the Plan simulation, even when datasets have the same name', () => {
+    const power = { name: '/power', schema: { metadata: { unit: { value: 'mW' } }, type: 'real' } } as ResourceType;
+    const context = legacyContext(datasets, 10, [power]);
+    expect(unitOf(findLegacyResourceType(context, '/power'))).toBe('mW');
+  });
+
+  test('without a selected-simulation match the first plan-level row wins, then the first row in order', () => {
+    const planLevel = [dataset(51, 99, '/foo', 'B'), dataset(50, null, '/foo', 'A'), dataset(52, null, '/foo', 'C')];
+    expect(selectLegacyExternalProfile(planLevel, 10, '/foo')?.datasetId).toBe(50);
+    expect(unitOf(findLegacyResourceType(legacyContext(planLevel, 10), '/foo'))).toBe('A');
+    // Array order, not dataset id, decides the final fallback.
+    const tiedElsewhere = [dataset(52, 98, '/foo', 'C'), dataset(50, 97, '/foo', 'A')];
+    expect(selectLegacyExternalProfile(tiedElsewhere, 10, '/foo')?.datasetId).toBe(52);
+    expect(selectLegacyExternalProfile(tiedElsewhere, null, '/foo')?.datasetId).toBe(52);
+    expect(findLegacyResourceType(legacyContext(tiedElsewhere, 10), '/missing')).toBeNull();
+  });
+
+  test('binding a legacy kW layer to the W dataset drops its 500 kW guide and resets the axis', () => {
+    const context = legacyContext(datasets, 10);
+    const timelines = [{ id: 0, marginLeft: 0, marginRight: 0, rows: [], verticalGuides: [] }] as any;
+    const displayed = findLegacyResourceType(context, '/power');
+    const { layer, yAxis } = createTimelineResourceLayer(timelines, displayed as ResourceType);
+    const row = createRow(timelines, {
+      horizontalGuides: [{ id: 0, label: { text: '500' }, y: 500, yAxisId: yAxis.id }],
+      layers: [layer!],
+      yAxes: [{ ...yAxis, domainFitMode: 'manual', scaleDomain: [0, 1000] }],
+    });
+    const target = findResourceType(context.registry, 'external-dataset:50', '/power');
+    const result = rebindResourceLayer(timelines, row, layer!, {
+      previousResourceType: displayed,
+      resourceName: '/power',
+      resourceType: target,
+      sourceId: 'external-dataset:50',
+      sourceLabel: 'Dataset 50',
+    });
+    expect(result.horizontalGuides).toEqual([]);
+    expect(result.yAxes[0]).toMatchObject({
+      domainFitMode: 'fitTimeWindow',
+      label: { text: '/power (W) · Dataset 50' },
+    });
+    expect(result.yAxes[0].scaleDomain).toBeUndefined();
+
+    // What the old registry-order lookup would have inferred: W -> W, which would have kept the guide.
+    const wrong = rebindResourceLayer(timelines, row, layer!, {
+      previousResourceType: findResourceType(context.registry, undefined, '/power'),
+      resourceName: '/power',
+      resourceType: target,
+      sourceId: 'external-dataset:50',
+      sourceLabel: 'Dataset 50',
+    });
+    expect(wrong.horizontalGuides).toHaveLength(1);
   });
 });
