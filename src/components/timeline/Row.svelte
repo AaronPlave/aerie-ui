@@ -47,7 +47,7 @@
     TimelineItemType,
     XAxisTick,
   } from '../../types/timeline';
-  import type { TimelineResourceProvider, TimelineSourceRegistry } from '../../types/timelineSource';
+  import type { SpanKey, TimelineResourceProvider, TimelineSourceRegistry } from '../../types/timelineSource';
   import { getAllSpansForActivityDirective } from '../../utilities/activities';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
@@ -71,7 +71,15 @@
     spanInView,
     type TimelineLockStatus,
   } from '../../utilities/timeline';
-  import { getResourceRequestKey, resolveResourceRef } from '../../utilities/timelineSources';
+  import {
+    getResourceRequestKey,
+    getSource,
+    getSourceLabel,
+    getSpanKeyForSpan,
+    isDefaultSource,
+    resolveActivityLayerSourceId,
+    resolveResourceRef,
+  } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import ConstraintViolations from './ConstraintViolations.svelte';
   import LayerDiscrete from './LayerDiscrete.svelte';
@@ -115,6 +123,7 @@
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
   export let selectedSpanId: SpanId | null = null;
+  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let spanUtilityMaps: SpanUtilityMaps;
   export let spansMap: SpansMap | null = {};
   export let timelineInteractionMode: TimelineInteractionMode;
@@ -187,7 +196,7 @@
   let idToColorMaps: {
     directives: Record<ActivityDirectiveId, string>;
     external_events: Record<ExternalEventId, string>;
-    spans: Record<SpanId, string>;
+    spans: Record<SpanKey, string>;
   } = {
     directives: {},
     external_events: {},
@@ -202,6 +211,8 @@
   let hasExternalEventsLayer: boolean = false;
   let hasResourceLayer: boolean = false;
   let selectedRowId: number | undefined = undefined;
+  let activitySourceErrors: string[] = [];
+  let activitySourcesLoading: boolean = false;
 
   $: selectedRowId = $selectedRow?.id;
 
@@ -321,6 +332,9 @@
   $: rowClasses = classNames('row', { 'row-collapsed': !expanded });
   $: discreteOptions = discreteOptions || { ...ViewDefaultDiscreteOptions };
   $: activityLayers = layers.filter(isActivityLayer);
+  $: defaultSourceActivityLayers = activityLayers.filter(layer =>
+    isDefaultSource(resolveActivityLayerSourceId(layer, defaultSourceId), defaultSourceId),
+  );
   $: externalEventLayers = layers.filter(isExternalEventLayer);
   $: lineLayers = layers.filter(layer => isLineLayer(layer) || (isXRangeLayer(layer) && layer.showAsLinePlot));
   $: xRangeLayers = layers.filter(layer => isXRangeLayer(layer) && !layer.showAsLinePlot);
@@ -413,22 +427,34 @@
     //   spans: { ...idToColorMaps.spans },
     // };
     if (activityLayers && spansMap && activityDirectives) {
-      let spansList = Object.values(spansMap);
       if (activityLayers.length) {
         let directives: ActivityDirective[] = [];
         let spans: Span[] = [];
+        const sourceErrors: string[] = [];
+        let sourcesLoading = false;
 
-        // track directives and spans that have been seen to avoid double counting
-        // if more than one layer matches a type
+        // SPIKE 3: each activity layer's existing filter runs against its own source's namespace
+        // (directives, spans, span maps, type catalog). Seen-sets are keyed by (source, span_id) since
+        // span_id is only unique within one source.
         let seenDirectiveIds: Record<number, boolean> = {};
-        let seenSpanIds: Record<number, boolean> = {};
+        let seenSpanKeys: Record<SpanKey, boolean> = {};
         activityLayers.forEach(layer => {
           if (layer.filter) {
+            const sourceId = resolveActivityLayerSourceId(layer, defaultSourceId);
+            const data = getActivitySourceData(sourceId, timelineSources, defaultSourceId, $filterActivityTypes);
+            if (data === null) {
+              sourcesLoading = true;
+              return;
+            }
+            if ('error' in data) {
+              sourceErrors.push(data.error);
+              return;
+            }
             const { directives: matchingDirectives, spans: matchingSpans } = applyActivityLayerFilter(
               layer.filter.activity,
-              activityDirectives || [],
-              spansList,
-              $filterActivityTypes,
+              data.directives,
+              data.spans,
+              data.types,
               $activityArgumentDefaultsMap,
             );
             const uniqueDirectives: ActivityDirective[] = [];
@@ -439,10 +465,10 @@
                 uniqueDirectives.push(directive);
 
                 // Gather spans for directive since we always show all spans for a directive
-                const childSpans = getAllSpansForActivityDirective(directive.id, spansMap || {}, spanUtilityMaps);
+                const childSpans = getAllSpansForActivityDirective(directive.id, data.spansMap, data.spanUtilityMaps);
                 childSpans.forEach(span => {
-                  seenSpanIds[span.span_id] = true;
-                  idToColorMaps.spans[span.span_id] = layer.activityColor;
+                  seenSpanKeys[getSpanKeyForSpan(span)] = true;
+                  idToColorMaps.spans[getSpanKeyForSpan(span)] = layer.activityColor;
                 });
                 spans = spans.concat(childSpans);
               }
@@ -451,15 +477,18 @@
 
             const uniqueSpans: Span[] = [];
             matchingSpans.forEach(span => {
-              if (!seenSpanIds[span.span_id]) {
-                idToColorMaps.spans[span.span_id] = layer.activityColor;
-                seenSpanIds[span.span_id] = true;
+              const key = getSpanKeyForSpan(span);
+              if (!seenSpanKeys[key]) {
+                idToColorMaps.spans[key] = layer.activityColor;
+                seenSpanKeys[key] = true;
                 uniqueSpans.push(span);
               }
             });
             spans = spans.concat(uniqueSpans);
           }
         });
+        activitySourceErrors = sourceErrors;
+        activitySourcesLoading = sourcesLoading;
         directives.sort((a, b) => ((a.start_time_ms ?? 0) < (b.start_time_ms ?? 0) ? -1 : 1));
         spans.sort((a, b) => (a.startMs < b.startMs ? -1 : 1));
         if (directives.length || spans.length) {
@@ -480,6 +509,8 @@
         // SPIKE fix: previously checked directives twice, so a row of spans with no directives never drew.
         hasActivityLayer = timeFilteredActivityDirectives.length > 0 || timeFilteredSpans.length > 0;
       } else {
+        activitySourceErrors = [];
+        activitySourcesLoading = false;
         hasActivityLayer = false;
       }
     }
@@ -587,9 +618,21 @@
     hasExternalEventsLayer: boolean,
     hasActivityLayer: boolean,
   ) {
-    return generateDiscreteTreeUtil(
+    // SPIKE 3: build one subtree per source, each with that source's own span maps, so hierarchy
+    // lookups (children, parent_id, directive -> span) never cross a source boundary. Non-default
+    // sources get namespaced node ids (expansion state) and a source-labelled group name.
+    const spansBySource: Record<string, Span[]> = {};
+    const defaultSpans: Span[] = [];
+    spans.forEach(span => {
+      if (span.sourceId) {
+        (spansBySource[span.sourceId] = spansBySource[span.sourceId] ?? []).push(span);
+      } else {
+        defaultSpans.push(span);
+      }
+    });
+    const tree = generateDiscreteTreeUtil(
       directives,
-      spans,
+      defaultSpans,
       externalEvents,
       discreteTreeExpansionMap,
       hierarchyMode,
@@ -601,8 +644,95 @@
       showDirectives,
       viewTimeRange,
       hasExternalEventsLayer,
-      hasActivityLayer,
+      hasActivityLayer && (directives.length > 0 || defaultSpans.length > 0),
     );
+    const otherSourceNodes: DiscreteTree = [];
+    Object.entries(spansBySource).forEach(([sourceId, sourceSpans]) => {
+      const intervals = getSource(timelineSources, sourceId)?.intervals;
+      if (!intervals) {
+        return;
+      }
+      otherSourceNodes.push(
+        ...generateDiscreteTreeUtil(
+          [],
+          sourceSpans,
+          [],
+          discreteTreeExpansionMap,
+          hierarchyMode,
+          groupEventsByMethod,
+          filterItemsByTime,
+          intervals.spanUtilityMaps,
+          intervals.spansMap,
+          showSpans,
+          false,
+          viewTimeRange,
+          false,
+          true,
+          { idPrefix: `${sourceId}::`, labelSuffix: ` · ${getSourceLabel(timelineSources, sourceId)}` },
+        ),
+      );
+    });
+    if (!otherSourceNodes.length) {
+      return tree;
+    }
+    const activityAgg = tree.find(node => node.id === '!!activity-agg');
+    if (activityAgg) {
+      activityAgg.children = activityAgg.children.concat(otherSourceNodes);
+      return tree;
+    }
+    return tree
+      .filter(node => node.type === 'Activity')
+      .concat(
+        otherSourceNodes,
+        tree.filter(node => node.type !== 'Activity'),
+      );
+  }
+
+  // SPIKE 3: the namespace an activity layer's filter runs in. The default source keeps today's
+  // meaning (plan directives + simulated spans from this row's props); any other source is imported
+  // intervals only. null = still loading.
+  function getActivitySourceData(
+    sourceId: string | null,
+    timelineSources: TimelineSourceRegistry | null,
+    defaultSourceId: string | null,
+    defaultTypes: ActivityType[],
+  ):
+    | {
+        directives: ActivityDirective[];
+        spanUtilityMaps: SpanUtilityMaps;
+        spans: Span[];
+        spansMap: SpansMap;
+        types: ActivityType[];
+      }
+    | { error: string }
+    | null {
+    if (isDefaultSource(sourceId, defaultSourceId)) {
+      return {
+        directives: activityDirectives || [],
+        spanUtilityMaps,
+        spans: Object.values(spansMap || {}),
+        spansMap: spansMap || {},
+        types: defaultTypes,
+      };
+    }
+    const source = getSource(timelineSources, sourceId);
+    if (!source) {
+      return { error: `Source "${sourceId}" is not available` };
+    }
+    if (source.intervals === undefined) {
+      return { error: `Source "${source.label}" has no activities` };
+    }
+    if (source.intervals === null) {
+      return null;
+    }
+    const { intervals } = source;
+    return {
+      directives: [],
+      spanUtilityMaps: intervals.spanUtilityMaps,
+      spans: intervals.spans,
+      spansMap: intervals.spansMap,
+      types: intervals.intervalTypes,
+    };
   }
 
   function onDiscreteTreeNodeChange(e: { detail: DiscreteTreeNode }) {
@@ -718,7 +848,11 @@
         if (type === 'activity' && items && plan) {
           // Determine if the row will visualize all requested activities
           let typesInRow = new Set();
+          // SPIKE 3: only layers bound to the plan's own slot can show a new plan directive.
           activityLayers.forEach(layer => {
+            if (!isDefaultSource(resolveActivityLayerSourceId(layer, defaultSourceId), defaultSourceId)) {
+              return;
+            }
             const matchingTypes = getMatchingTypesForActivityLayerFilter(
               layer.filter.activity,
               $planModelActivityTypes,
@@ -752,7 +886,7 @@
                   type,
                   metadata,
                   id,
-                  activityLayers.length ? activityLayers[0] : undefined,
+                  defaultSourceActivityLayers.length ? defaultSourceActivityLayers[0] : undefined,
                   index,
                 );
               }
@@ -848,8 +982,8 @@
     // Note: skipping resource layer assignment since only one resource
     // can be assigned to a layer
     if (type === 'activity') {
-      // adding an activity
-      layer = activityLayers[0];
+      // adding an activity (SPIKE 3: item catalogs are the default source's, so never into another source's layer)
+      layer = defaultSourceActivityLayers[0];
     } else if (type === 'externalEvent' && items.length) {
       // adding an external event
       layer = externalEventLayers[0];
@@ -900,6 +1034,7 @@
       on:contextMenu
       {selectedActivityDirectiveId}
       {selectedSpanId}
+      {selectedSpanKey}
       {selectedExternalEventId}
     >
       {#if (hasActivityLayer || hasExternalEventsLayer) && discreteOptions?.displayMode === 'grouped'}
@@ -962,6 +1097,12 @@
         <div class="layer-message error st-typography-label">
           Failed to load profiles for {resourceLoadingErrors.length} layer{pluralize(resourceLoadingErrors.length)}
         </div>
+      {/if}
+      <!-- SPIKE 3: activity layer bound to a source this timeline does not have (or that has no intervals) -->
+      {#if activitySourceErrors.length}
+        <div class="layer-message error st-typography-label">{activitySourceErrors.join('; ')}</div>
+      {:else if activitySourcesLoading && !hasActivityLayer}
+        <div class="layer-message loading st-typography-label">Loading...</div>
       {/if}
       <!-- External event error indicator -->
       {#if hasExternalEventsLayer && $externalEventsError}
@@ -1028,6 +1169,7 @@
             {planStartTimeYmd}
             {selectedActivityDirectiveId}
             {selectedSpanId}
+            {selectedSpanKey}
             {selectedExternalEventId}
             {spanUtilityMaps}
             spansMap={spansMap || {}}

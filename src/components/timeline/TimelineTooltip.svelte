@@ -16,7 +16,7 @@
   import { convertUsToDurationString, formatDate, getDoyTime } from '../../utilities/time';
   import type { TimelineSourceRegistry } from '../../types/timelineSource';
   import { getResourceForLayer } from '../../utilities/timeline';
-  import { getSourceLabel, resolveResourceRef } from '../../utilities/timelineSources';
+  import { getSource, getSourceLabel, getSpanParent, resolveResourceRef } from '../../utilities/timelineSources';
 
   export let interpolateHoverValue: boolean = false;
   export let hidden: boolean = false;
@@ -536,13 +536,38 @@
     `;
   }
 
+  // SPIKE 3: which source a span came from, and its parent resolved within that same source.
+  function textForSpanSource(span: Span): string {
+    const rows: string[] = [];
+    if (timelineSources && timelineSources.sources.length > 1) {
+      const sourceId = span.sourceId ?? timelineSources.defaultSourceId;
+      rows.push(`<div class='tooltip-row'>
+          <span>Source:</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(getSourceLabel(timelineSources, sourceId))}</span>
+        </div>`);
+    }
+    if (span.parent_id !== null) {
+      const parent = getSpanParent(span, timelineSources, getSource(timelineSources, null)?.intervals?.spansMap);
+      rows.push(`<div class='tooltip-row'>
+          <span>Parent:</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${
+            parent ? `${escapeHtml(parent.type)} (${parent.span_id})` : `${span.parent_id} (not loaded)`
+          }</span>
+        </div>`);
+    }
+    return rows.join('');
+  }
+
   function textForSpan(span: Span): string {
     const { span_id, duration, startMs, endMs, type } = span;
     const spanStartTime = formatDate(new Date(startMs), $plugins.time.primary.format);
     const spanEndTime = formatDate(new Date(endMs), $plugins.time.primary.format);
     return `
       <div class='tooltip-row-container'>
-        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} Simulated Activity (Span)</div>
+        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} ${
+          span.sourceId ? 'Imported Interval' : 'Simulated Activity (Span)'
+        }</div>
+        ${textForSpanSource(span)}
         <div class='tooltip-row'>
           <span>Type:</span>
           <span class='tooltip-value-highlight st-typography-medium'>${type}</span>

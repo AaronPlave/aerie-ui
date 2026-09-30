@@ -86,7 +86,7 @@
   $: timelines = $view?.definition.plan.timelines ?? [];
 
   $: if (contextMenu && contextMenuComponent) {
-    const { e, selectedActivityDirectiveId, selectedSpanId, origin, row: selectedRow } = contextMenu;
+    const { e, selectedActivityDirectiveId, selectedSpan, selectedSpanId, origin, row: selectedRow } = contextMenu;
     row = selectedRow;
     mouseOverOrigin = origin;
     contextMenuComponent.show(e);
@@ -104,6 +104,10 @@
     if (selectedActivityDirectiveId != null) {
       activityDirective = activityDirectivesMap[selectedActivityDirectiveId];
       activityDirectiveSpans = getAllSpansForActivityDirective(selectedActivityDirectiveId, spansMap, spanUtilityMaps);
+    } else if (selectedSpan?.sourceId) {
+      // SPIKE 3: an imported span. spansMap is the plan simulation's; looking its span_id up there
+      // would open the menu for the plan span that happens to share the id.
+      span = selectedSpan;
     } else if (selectedSpanId != null) {
       span = spansMap[selectedSpanId];
     }
@@ -173,6 +177,10 @@
   }
 
   function getSpanDate(span: Span, includeDuration: boolean = false) {
+    if (span.sourceId) {
+      // SPIKE 3: an imported span's start_offset is relative to its own source, not the simulation.
+      return new Date(includeDuration ? span.endMs : span.startMs);
+    }
     const duration = includeDuration ? getIntervalInMs(span.duration) : 0;
     return new Date(getUnixEpochTimeFromInterval(startYmd, span.start_offset) + duration);
   }
@@ -376,8 +384,10 @@
         </ContextMenu.Item>
       </div>
     {:else if span}
-      <ContextMenu.Item size="sm" on:click={jumpToActivityDirective}>Jump to Activity Directive</ContextMenu.Item>
-      <ContextMenu.Separator />
+      {#if !span.sourceId}
+        <ContextMenu.Item size="sm" on:click={jumpToActivityDirective}>Jump to Activity Directive</ContextMenu.Item>
+        <ContextMenu.Separator />
+      {/if}
       <ContextMenu.Sub>
         <ContextMenu.SubTrigger size="sm">Place Guide</ContextMenu.SubTrigger>
         <ContextMenu.SubContent class="w-48">

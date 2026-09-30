@@ -27,7 +27,7 @@
     yAxesWithScaleDomainsCache,
   } from '../../stores/simulation';
   import { getTimelineSourceCatalog } from '../../stores/timelineSourceCatalog';
-  import { createPlanTimelineSourceRegistry } from '../../stores/timelineSources';
+  import { createPlanTimelineSourceRegistry, selectedSourceSpan } from '../../stores/timelineSources';
   import {
     timelineInteractionMode,
     timelineLockStatus,
@@ -47,10 +47,11 @@
     Row,
     Timeline as TimelineType,
   } from '../../types/timeline';
-  import type { TimelineSourceRegistry } from '../../types/timelineSource';
+  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
   import { featurePermissions } from '../../utilities/permissions';
+  import { getSpanKey, getSpanKeyForSpan } from '../../utilities/timelineSources';
   import Panel from '../ui/Panel.svelte';
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import Timeline from './Timeline.svelte';
@@ -82,6 +83,17 @@
   const fallbackSources = catalogSources ?? createPlanTimelineSourceRegistry(user, readable([]));
   $: timelineSources = $fallbackSources;
 
+  // SPIKE 3: a plan selection made anywhere (tables, forms) supersedes an imported-span selection.
+  $: if ($selectedSpanId !== null || $selectedActivityDirectiveId !== null) {
+    selectedSourceSpan.set(null);
+  }
+  let selectedSpanKey: SpanKey | null = null;
+  $: selectedSpanKey = $selectedSourceSpan
+    ? getSpanKeyForSpan($selectedSourceSpan)
+    : $selectedSpanId !== null
+      ? getSpanKey({ sourceId: null, spanId: $selectedSpanId })
+      : null;
+
   $: timelines = $view?.definition.plan.timelines || [];
   $: timeline = timelines.find(timeline => {
     return timeline.id === timelineId;
@@ -98,7 +110,7 @@
     const {
       detail: { selectedActivityDirectiveId, selectedSpanId, selectedExternalEventId },
     } = event;
-    if (selectedActivityDirectiveId !== undefined || selectedSpanId !== undefined) {
+    if (selectedActivityDirectiveId !== undefined || selectedSpanId !== undefined || $selectedSourceSpan) {
       viewTogglePanel({ state: true, type: 'right', update: { rightComponentTop: 'ActivityFormPanel' } });
     } else if (selectedExternalEventId !== undefined) {
       viewTogglePanel({ state: true, type: 'right', update: { rightComponentTop: 'ExternalEventFormPanel' } });
@@ -118,9 +130,15 @@
   function onMouseDown(event: CustomEvent<MouseDown>) {
     const { detail } = event;
     const { activityDirectives, spans, externalEvents } = detail;
+    selectedSourceSpan.set(null);
     if (externalEvents !== undefined && externalEvents.length) {
       selectExternalEvent(getExternalEventRowId(externalEvents[0].pkey));
       selectActivity(null, null);
+    } else if (spans != null && spans.length && spans[0].sourceId) {
+      // SPIKE 3: imported span. Not a plan activity: clear the plan selection, select (source, span_id).
+      selectActivity(null, null, false);
+      selectExternalEvent(null);
+      selectedSourceSpan.set(spans[0]);
     } else if (spans != null && spans.length) {
       selectActivity(null, spans[0].span_id);
       selectExternalEvent(null);
@@ -257,6 +275,7 @@
       selectedActivityDirectiveId={$selectedActivityDirectiveId}
       selectedExternalEventId={$selectedExternalEventId}
       selectedSpanId={$selectedSpanId}
+      {selectedSpanKey}
       simulation={$simulation}
       simulationDataset={$simulationDataset}
       spanUtilityMaps={$spanUtilityMaps}

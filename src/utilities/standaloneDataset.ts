@@ -54,6 +54,32 @@ export function getIntervalTypesFromSpans(
   });
 }
 
+/**
+ * SPIKE 3e: a source-side catalog inferred from normalized span data, not from a mission model:
+ * each type's parameters are the union of its spans' `attributes.arguments` keys, typed by value.
+ * (Type-level metadata such as a subsystem *tag* cannot be inferred from per-span values.)
+ */
+export function inferIntervalTypeDescriptors(spans: Span[] | null): IntervalTypeDescriptor[] {
+  const byType = new Map<string, Record<string, ValueSchema>>();
+  (spans ?? []).forEach(span => {
+    const parameters = byType.get(span.type) ?? {};
+    Object.entries(span.attributes?.arguments ?? {}).forEach(([name, value]) => {
+      if (parameters[name]) {
+        return;
+      }
+      if (typeof value === 'string') {
+        parameters[name] = { type: 'string' };
+      } else if (typeof value === 'boolean') {
+        parameters[name] = { type: 'boolean' };
+      } else if (typeof value === 'number') {
+        parameters[name] = Number.isInteger(value) ? { type: 'int' } : { type: 'real' };
+      }
+    });
+    byType.set(span.type, parameters);
+  });
+  return Array.from(byType.entries()).map(([name, parameters]) => ({ name, parameters }));
+}
+
 /** Demo descriptors for deployment/spike/standalone_dataset_fixture.sql (enable with ?intervalDescriptors=demo). */
 export const demoIntervalTypeDescriptors: IntervalTypeDescriptor[] = [
   {

@@ -54,7 +54,7 @@ import { generateRandomPastelColor } from './color';
 import { getExternalEventRowId } from './externalEvents';
 import { filterEmpty, lowercase, stringCompare } from './generic';
 import { getDoyTime } from './time';
-import { resourceMatchesFilter, toResourceLayerFilter } from './timelineSources';
+import { getSpanKeyForSpan, resourceMatchesFilter, toResourceLayerFilter } from './timelineSources';
 
 export enum TimelineLockStatus {
   Locked = 'Locked',
@@ -263,7 +263,7 @@ export function searchQuadtreeRect<T>(
   y: number,
   maxH: number,
   maxW: number,
-  map: Record<number, T>,
+  map: Record<number | string, T>,
 ): T[] {
   const points: T[] = [];
 
@@ -274,7 +274,7 @@ export function searchQuadtreeRect<T>(
           do {
             const { data: p } = node;
             if (p.x + p.width >= x && p.x < x && p.y + p.height >= y && p.y < y) {
-              points.push(map[p.id as number]);
+              points.push(map[p.id]);
             }
           } while ((node = node.next));
         }
@@ -1004,8 +1004,22 @@ export function generateDiscreteTreeUtil(
   viewTimeRange: TimeRange,
   hasExternalEventsLayer: boolean,
   hasActivityLayer: boolean,
+  // SPIKE 3: set when the spans come from a non-default source, so its type groups neither share
+  // expansion state nor a label with same-named groups from another source.
+  nodeNamespace: { idPrefix: string; labelSuffix: string } | null = null,
 ): DiscreteTree {
-  const groupedSpans = showSpans && hierarchyMode === 'flat' ? groupBy(spans, 'type') : {};
+  // SPIKE 3: a source without directives (imported intervals) has no directive roots, so in
+  // 'directive' hierarchy mode its root spans (no parent in this source) stand in as the roots.
+  const spanRootsOnly = hierarchyMode === 'directive' && nodeNamespace !== null;
+  const groupedSpans =
+    showSpans && hierarchyMode === 'flat'
+      ? groupBy(spans, 'type')
+      : showSpans && spanRootsOnly
+        ? groupBy(
+            spans.filter(span => span.parent_id === null || !spansMap[span.parent_id]),
+            'type',
+          )
+        : {};
   const groupedDirectives = showDirectives ? groupBy(directives, 'type') : {};
   const groupByMethodFormatted = `pkey.${groupByMethod}`; // Both event_type_name and source_key are within the pkey field
   const groupedExternalEvents = groupBy(externalEvents, groupByMethodFormatted);
@@ -1019,9 +1033,9 @@ export function generateDiscreteTreeUtil(
       .forEach(type => {
         const spanGroup = groupedSpans[type];
         const directiveGroup = groupedDirectives[type];
-        const id = type;
+        const id = `${nodeNamespace?.idPrefix ?? ''}${type}`;
         const expanded = getNodeExpanded(id, discreteTreeExpansionMap);
-        const label = type;
+        const label = `${type}${nodeNamespace?.labelSuffix ?? ''}`;
         const children: DiscreteTreeNode['children'] = [];
         const items: DiscreteTreeNode['items'] = [];
         const seenSpans: Record<string, boolean> = {};
@@ -1052,7 +1066,7 @@ export function generateDiscreteTreeUtil(
             items.push({ directive, ...(childSpan ? { span: childSpan } : null) });
           });
         }
-        if (spanGroup && hierarchyMode === 'flat') {
+        if (spanGroup && (hierarchyMode === 'flat' || spanRootsOnly)) {
           spanGroup.forEach(span => {
             if (!seenSpans[span.span_id]) {
               if (expanded) {
@@ -1162,7 +1176,7 @@ export function generateDiscreteTreeUtil(
 
 function getUniqueNodeItems(nodes: DiscreteTreeNode[]) {
   const uniqueDirectiveLookup: Set<number> = new Set();
-  const uniqueSpanLookup: Set<number> = new Set();
+  const uniqueSpanLookup: Set<string> = new Set();
   const uniqueExternalEventLookup: Set<string> = new Set();
   return nodes
     .flatMap((node: DiscreteTreeNode) => node.items)
@@ -1170,8 +1184,8 @@ function getUniqueNodeItems(nodes: DiscreteTreeNode[]) {
       if (nodeItem.directive && !uniqueDirectiveLookup.has(nodeItem.directive.id)) {
         uniqueDirectiveLookup.add(nodeItem.directive.id);
         flattenedNodes.push(nodeItem);
-      } else if (nodeItem.span && !uniqueSpanLookup.has(nodeItem.span.span_id)) {
-        uniqueSpanLookup.add(nodeItem.span.span_id);
+      } else if (nodeItem.span && !uniqueSpanLookup.has(getSpanKeyForSpan(nodeItem.span))) {
+        uniqueSpanLookup.add(getSpanKeyForSpan(nodeItem.span));
         flattenedNodes.push(nodeItem);
       } else if (
         nodeItem.externalEvent &&

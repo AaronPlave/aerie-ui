@@ -3,9 +3,15 @@ import { createExternalResourceSubscription } from '../stores/externalResource';
 import { createProfileSubscription } from '../stores/profile';
 import type { User } from '../types/app';
 import type { Plan } from '../types/plan';
-import type { ResourceType, SimulationDataset } from '../types/simulation';
-import type { StandaloneDataset, TimelineResourceProvider, TimelineSource } from '../types/timelineSource';
-import { getStandaloneSourceId, PLAN_SIMULATION_SOURCE_ID } from './timelineSources';
+import type { ActivityType } from '../types/activity';
+import type { ResourceType, SimulationDataset, Span } from '../types/simulation';
+import type {
+  StandaloneDataset,
+  TimelineResourceProvider,
+  TimelineSource,
+  TimelineSourceId,
+} from '../types/timelineSource';
+import { createTimelineIntervalData, getStandaloneSourceId, PLAN_SIMULATION_SOURCE_ID } from './timelineSources';
 
 /**
  * The plan page's existing behavior, moved out of Row.svelte unchanged: a resource is either a
@@ -39,16 +45,28 @@ export function createPlanTimelineResourceProvider(
 /**
  * SPIKE 2: the standalone dataset as a registry entry. Its catalog is stamped with the source id so
  * layers created from it (drag/drop, "add to row") are source-qualified.
+ * SPIKE 3: `sourceId` may be a view slot ("tour") instead of the artifact-derived id, and the source
+ * can also expose intervals (its spans) when they are passed in.
  */
 export function createStandaloneTimelineSource(
   standaloneDataset: StandaloneDataset,
   resourceTypes: ResourceType[],
   user: User | null,
   stampResourceTypes: boolean = true,
+  options: { intervalTypes?: ActivityType[]; sourceId?: TimelineSourceId; spans?: Span[] } = {},
 ): TimelineSource {
-  const provider = createStandaloneTimelineResourceProvider(standaloneDataset, user);
+  const provider = createStandaloneTimelineResourceProvider(standaloneDataset, user, options.sourceId);
   return {
+    binding: `standalone_dataset ${standaloneDataset.id} (${standaloneDataset.name}) / dataset ${standaloneDataset.dataset_id}`,
     id: provider.sourceId,
+    intervals: options.spans
+      ? createTimelineIntervalData(
+          `dataset:${standaloneDataset.dataset_id}`,
+          options.spans,
+          options.intervalTypes ?? [],
+          stampResourceTypes ? provider.sourceId : null,
+        )
+      : undefined,
     label: standaloneDataset.name,
     provider,
     resourceTypes: stampResourceTypes
@@ -68,10 +86,11 @@ export function createStandaloneTimelineSource(
 export function createStandaloneTimelineResourceProvider(
   standaloneDataset: StandaloneDataset,
   user: User | null,
+  sourceId: TimelineSourceId = getStandaloneSourceId(standaloneDataset.id),
 ): TimelineResourceProvider {
   return {
     key: `standalone:${standaloneDataset.dataset_id}`,
-    sourceId: getStandaloneSourceId(standaloneDataset.id),
+    sourceId,
     subscribeResource(name) {
       return createProfileSubscription(standaloneDataset.dataset_id, name, standaloneDataset.start_time, user);
     },

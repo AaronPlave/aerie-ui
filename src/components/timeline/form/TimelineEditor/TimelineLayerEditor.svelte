@@ -17,6 +17,7 @@
   import type { TimelineSourceRegistry } from '../../../../types/timelineSource';
   import type {
     ActivityLayer,
+    ActivityLayerFilter,
     Axis,
     ChartType,
     ExternalEventLayer,
@@ -27,7 +28,11 @@
   import { isActivityLayer, isExternalEventLayer, isLineLayer, isXRangeLayer } from '../../../../utilities/timeline';
   import {
     getResourceFilterName,
+    getSource,
+    isDefaultSource,
+    resolveActivityLayerSourceId,
     resolveResourceRef,
+    toActivityLayerSourceId,
     toResourceLayerFilter,
   } from '../../../../utilities/timelineSources';
   import { tooltip } from '../../../../utilities/tooltip';
@@ -46,6 +51,8 @@
   // SPIKE 2: with a source registry, a resource layer is edited as (source, resource).
   const catalogSources = catalog.sources ?? readable<TimelineSourceRegistry | null>(null);
 
+  const emptySpanUtilityMaps = { directiveIdToSpanIdMap: {}, spanIdToChildIdsMap: {}, spanIdToDirectiveIdMap: {} };
+
   export let layer: Layer;
   export let yAxes: Axis[] = [];
 
@@ -59,6 +66,7 @@
   let pickedForLayerId: number | null = null;
 
   const dispatch = createEventDispatcher<{
+    activitySourceChange: { filter: ActivityLayerFilter | undefined; sourceId: string | undefined };
     colorChange: { color: string };
     duplicate: void;
     filterChange: { filter: ResourceLayerFilter | ExternalEventLayerFilter };
@@ -115,6 +123,54 @@
       options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
     }
     return options;
+  }
+
+  // SPIKE 3: activity layers bind to a source at the layer level; the filter itself is unchanged.
+  $: activitySourceId = isActivityLayer(layer) ? resolveActivityLayerSourceId(layer, defaultSourceId) : null;
+  $: activitySourceOptions = getActivitySourceOptions(registry, activitySourceId);
+  $: activitySource = getSource(registry, activitySourceId);
+  // null = use the plan/global stores exactly as before; otherwise the source's own catalog.
+  $: activitySourceCatalog =
+    registry && !isDefaultSource(activitySourceId, defaultSourceId)
+      ? (activitySource?.intervals ?? { intervalTypes: [], spanUtilityMaps: emptySpanUtilityMaps, spans: [] })
+      : null;
+
+  function getActivitySourceOptions(registry: TimelineSourceRegistry | null, selectedSourceId: string | null) {
+    const options = (registry?.sources ?? [])
+      .filter(source => source.hasDirectives || source.intervals !== undefined)
+      .map(source => ({ label: source.label, value: source.id }));
+    if (selectedSourceId && !options.find(option => option.value === selectedSourceId)) {
+      options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
+    }
+    return options;
+  }
+
+  function onActivitySourceChange(event: Event) {
+    if (!isActivityLayer(layer)) {
+      return;
+    }
+    const sourceId = (event.currentTarget as HTMLSelectElement).value;
+    const newSource = getSource(registry, sourceId);
+    const typeNames = new Set((newSource?.intervals?.intervalTypes ?? []).map(type => type.name));
+    // Type selections only mean something within one source's catalog: drop those the new source does
+    // not declare instead of silently carrying them over. Rule-based filters (dynamic/other) are kept.
+    // Exception: if that would drop *every* selected type, keep them. The filter model has no "match
+    // nothing", and an emptied static_types means "all types", which would silently widen the layer.
+    const filter = layer.filter.activity;
+    const keptTypes = (filter?.static_types ?? []).filter(type => typeNames.has(type));
+    const prunedFilter: ActivityLayerFilter | undefined = filter
+      ? {
+          ...filter,
+          static_types: keptTypes.length || !filter.static_types?.length ? keptTypes : filter.static_types,
+          type_subfilters: Object.fromEntries(
+            Object.entries(filter.type_subfilters ?? {}).filter(([type]) => typeNames.has(type)),
+          ),
+        }
+      : filter;
+    dispatch('activitySourceChange', {
+      filter: prunedFilter,
+      sourceId: toActivityLayerSourceId(sourceId, defaultSourceId),
+    });
   }
 
   function onSourceChange(event: Event) {
@@ -198,8 +254,23 @@
     </div>
     {#if isActivityLayer(layer)}
       {@const filterCount = getActivityLayerFilterCount(layer)}
+      {#if activitySourceOptions.length > 1}
+        <!-- SPIKE 3: the layer's source slot; the filter builder then works against that source's catalog. -->
+        <select
+          aria-label="Activity source"
+          class="st-select layer-source"
+          value={activitySourceId}
+          on:change={onActivitySourceChange}
+          use:tooltip={{ content: 'Source', placement: 'top' }}
+        >
+          {#each activitySourceOptions as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      {/if}
       <ActivityFilterBuilder
         layerName={layer.name}
+        sourceCatalog={activitySourceCatalog}
         filter={layer.filter.activity}
         on:filterChange
         on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}

@@ -515,6 +515,10 @@
                                 "description": "Name of the layer",
                                 "type": "string"
                               },
+                              "sourceId": {
+                                "description": "SPIKE 3: source slot the activity filter selects from; absent = the default (plan) source",
+                                "type": "string"
+                              },
                               "yAxisId": {
                                 "$ref": "#/definitions/yAxisId"
                               }

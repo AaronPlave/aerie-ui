@@ -187,6 +187,11 @@ export type SpanDB = {
 export type Span = SpanDB & {
   durationMs: number;
   endMs: number;
+  /**
+   * SPIKE 3: which timeline source this span came from. Absent means the timeline's default source.
+   * `span_id`/`parent_id` are only unique within one source, so identity is (sourceId, span_id).
+   */
+  sourceId?: string;
   startMs: number;
 };
 

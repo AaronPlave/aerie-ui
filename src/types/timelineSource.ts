@@ -3,7 +3,7 @@
 import type { Readable } from 'svelte/store';
 import type { TimelineResourceState } from '../stores/timelineResourceStatus';
 import type { ActivityType } from './activity';
-import type { ResourceType, Span } from './simulation';
+import type { ResourceType, Span, SpanId, SpansMap, SpanUtilityMaps } from './simulation';
 import type { TimeRange } from './timeline';
 
 export type TimelineResourceSubscription = {
@@ -42,12 +42,50 @@ export type TimelineSourceId = string;
  * source's own catalog, whose entries are stamped with `sourceId` unless it is the default source.
  */
 export type TimelineSource = {
+  /** SPIKE 3: human-readable description of the concrete artifact currently bound to this slot. */
+  binding?: string;
+  /** SPIKE 3: true only for the plan slot, whose activity layers also draw editable directives. */
+  hasDirectives?: boolean;
+  /**
+   * SPIKE 3: the binding identity layers refer to. With `?source.<slot>=...` this is a view-level slot
+   * name (e.g. "tour") rather than a concrete artifact id; the artifact/revision lives in `binding`
+   * and in each capability's `key`.
+   */
   id: TimelineSourceId;
+  /**
+   * SPIKE 3: interval (span) capability. `undefined` = this source has no intervals at all;
+   * `null` = it does, but they are still loading.
+   */
+  intervals?: TimelineIntervalData | null;
   label: string;
   provider: TimelineResourceProvider | null;
   resourceTypes: ResourceType[];
   resourceTypesLoading?: boolean;
 };
+
+/**
+ * SPIKE 3: one source's intervals, eagerly loaded (no range queries yet). Spans carry absolute times
+ * and, for non-default sources, a `sourceId` stamp. The maps are keyed by span_id and are only valid
+ * within this source: never merge two sources' maps.
+ */
+export type TimelineIntervalData = {
+  /** The source's own type catalog; shaped as ActivityType because that is what the filter UI consumes. */
+  intervalTypes: ActivityType[];
+  /** Identity of the data revision (e.g. the merlin.dataset), distinct from the source/slot id. */
+  key: string;
+  spanUtilityMaps: SpanUtilityMaps;
+  spans: Span[];
+  spansMap: SpansMap;
+};
+
+/** SPIKE 3: timeline-wide span identity. `sourceId: null` means the default source. */
+export type SpanRef = {
+  sourceId: TimelineSourceId | null;
+  spanId: SpanId;
+};
+
+/** SPIKE 3: map key form of a SpanRef, for records/quadtrees that need a primitive key. */
+export type SpanKey = string & { readonly __brand: 'SpanKey' };
 
 /**
  * SPIKE 2: every source one timeline can see. Legacy (bare-string) resource layers and

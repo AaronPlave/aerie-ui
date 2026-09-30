@@ -18,6 +18,7 @@
   import { tags } from '../../../../stores/tags';
   import { getTimelineSourceCatalog } from '../../../../stores/timelineSourceCatalog';
   import type { ValueSchemaVariant } from '../../../../types/schema';
+  import type { TimelineIntervalData } from '../../../../types/timelineSource';
   import type { ActivityLayerFilter, ActivityLayerFilterSubfieldSchema } from '../../../../types/timeline';
   import { compare, getTarget, lowercase } from '../../../../utilities/generic';
   import { pluralize } from '../../../../utilities/text';
@@ -39,9 +40,22 @@
 
   // SPIKE: a non-plan page can supply interval types/spans; the plan page falls back to the model's.
   const catalog = getTimelineSourceCatalog();
-  const planModelActivityTypes = catalog.intervalTypes ?? modelActivityTypes;
-  const subsystemTags = catalog.intervalTypes ? derived(catalog.intervalTypes, getSubsystemTags) : modelSubsystemTags;
-  const spans = catalog.spans ?? simulationSpans;
+  const catalogActivityTypes = catalog.intervalTypes ?? modelActivityTypes;
+  const catalogSubsystemTags = catalog.intervalTypes
+    ? derived(catalog.intervalTypes, getSubsystemTags)
+    : modelSubsystemTags;
+  const catalogSpans = catalog.spans ?? simulationSpans;
+
+  /**
+   * SPIKE 3: when the layer is bound to a non-default source, the (unchanged) builder operates on that
+   * source's catalog and spans instead of the page-wide stores. null = page-wide stores, as before.
+   */
+  export let sourceCatalog: Pick<TimelineIntervalData, 'intervalTypes' | 'spanUtilityMaps' | 'spans'> | null = null;
+
+  $: planModelActivityTypes = sourceCatalog ? sourceCatalog.intervalTypes : $catalogActivityTypes;
+  $: subsystemTags = sourceCatalog ? getSubsystemTags(sourceCatalog.intervalTypes) : $catalogSubsystemTags;
+  $: spans = sourceCatalog ? sourceCatalog.spans : $catalogSpans;
+  $: filterSpanUtilityMaps = sourceCatalog ? sourceCatalog.spanUtilityMaps : $spanUtilityMaps;
 
   export let filter: ActivityLayerFilter | undefined = undefined;
   export const filterWidth = 1000;
@@ -213,12 +227,13 @@
     dirtyFilter = structuredClone(filter);
   }
 
-  $: activityDirectives = Object.values($activityDirectivesMap || {});
+  // Imported sources have no directives.
+  $: activityDirectives = sourceCatalog ? [] : Object.values($activityDirectivesMap || {});
   $: appliedFilter = applyActivityLayerFilter(
     dirtyFilter,
     activityDirectives,
-    $spans || [],
-    $planModelActivityTypes,
+    spans || [],
+    planModelActivityTypes,
     $activityArgumentDefaultsMap,
   );
 
@@ -226,7 +241,7 @@
     const seenSpans: Record<number, boolean> = {};
     let count = appliedFilter.directives.length;
     appliedFilter.directives.forEach(directive => {
-      const matchingSpanId = $spanUtilityMaps.directiveIdToSpanIdMap[directive.id];
+      const matchingSpanId = filterSpanUtilityMaps.directiveIdToSpanIdMap[directive.id];
       if (typeof matchingSpanId === 'number') {
         seenSpans[matchingSpanId] = true;
       }
@@ -239,7 +254,7 @@
     instanceCount = count;
   }
 
-  $: matchingTypes = getMatchingTypesForActivityLayerFilter(dirtyFilter, $planModelActivityTypes);
+  $: matchingTypes = getMatchingTypesForActivityLayerFilter(dirtyFilter, planModelActivityTypes);
   $: filteredMatchingTypes = matchingTypes.filter(type => {
     if (!resultingTypesInputValue) {
       return true;
@@ -249,7 +264,7 @@
   });
 
   $: {
-    const allParameterTypes = (matchingTypes.length ? matchingTypes : $planModelActivityTypes).reduce(
+    const allParameterTypes = (matchingTypes.length ? matchingTypes : planModelActivityTypes).reduce(
       (acc: Record<string, ActivityLayerFilterSubfieldSchema>, activityType) => {
         Object.entries(activityType.parameters).forEach(([parameterName, parameter]) => {
           const parameterType = parameter.schema.type;
@@ -294,7 +309,7 @@
     parameterSubfields = Object.values(allParameterTypes).sort((a, b) => compare(a.label, b.label));
   }
 
-  $: filteredActivityTypes = $planModelActivityTypes.filter(type => {
+  $: filteredActivityTypes = planModelActivityTypes.filter(type => {
     if (!manualInputValue) {
       return true;
     }
@@ -440,7 +455,7 @@
                       {#if filteredActivityTypes.length > 0}
                         <MenuItem on:click={() => onAddAllManualTypes()}>
                           <div class="st-typography-bold manual-types-add-all">
-                            Add {filteredActivityTypes.length !== $planModelActivityTypes.length ? 'Matching' : 'All'} +
+                            Add {filteredActivityTypes.length !== planModelActivityTypes.length ? 'Matching' : 'All'} +
                           </div>
                         </MenuItem>
                         {#each filteredActivityTypes as type}
@@ -495,13 +510,13 @@
                         verb={i === 0 ? 'Where' : 'and'}
                         schema={{
                           Subsystem: {
-                            does_not_include: { type: 'tag', values: $subsystemTags },
-                            includes: { type: 'tag', values: $subsystemTags },
+                            does_not_include: { type: 'tag', values: subsystemTags },
+                            includes: { type: 'tag', values: subsystemTags },
                           },
                           Type: {
-                            does_not_equal: { type: 'variant', values: $planModelActivityTypes.map(type => type.name) },
+                            does_not_equal: { type: 'variant', values: planModelActivityTypes.map(type => type.name) },
                             does_not_include: { type: 'string' },
-                            equals: { type: 'variant', values: $planModelActivityTypes.map(type => type.name) },
+                            equals: { type: 'variant', values: planModelActivityTypes.map(type => type.name) },
                             includes: { type: 'string' },
                           },
                         }}

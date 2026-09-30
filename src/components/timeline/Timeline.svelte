@@ -34,7 +34,7 @@
     Timeline,
     XAxisTick,
   } from '../../types/timeline';
-  import type { TimelineSourceRegistry } from '../../types/timelineSource';
+  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import { clamp } from '../../utilities/generic';
   import { formatDate } from '../../utilities/time';
   import { MAX_CANVAS_SIZE, TimelineInteractionMode, TimelineLockStatus, getXScale } from '../../utilities/timeline';
@@ -66,6 +66,8 @@
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
   export let selectedSpanId: SpanId | null = null;
+  /** SPIKE 3: source-qualified selection; undefined falls back to `selectedSpanId` (default source). */
+  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let simulation: Simulation | null = null;
   export let simulationDataset: SimulationDataset | null = null;
   export let spanUtilityMaps: SpanUtilityMaps;
@@ -513,6 +515,7 @@
             {selectedActivityDirectiveId}
             {selectedExternalEventId}
             {selectedSpanId}
+            {selectedSpanKey}
             {spanUtilityMaps}
             {spansMap}
             {timelineInteractionMode}

@@ -40,6 +40,7 @@
   import type { RadioButtonId } from '../../../types/radio-buttons';
   import type {
     ActivityLayer,
+    ActivityLayerFilter,
     ActivityOptions,
     Axis,
     ChartType,
@@ -378,6 +379,23 @@
           ...layer,
           [property]: value,
         };
+      }
+      return l;
+    });
+    viewUpdateRow('layers', newLayers);
+  }
+
+  // SPIKE 3: rebinding an activity layer to another source changes its source and (pruned) filter at once.
+  function handleUpdateActivityLayerSource(
+    sourceId: string | undefined,
+    filter: ActivityLayerFilter | undefined,
+    layer: Layer,
+  ) {
+    const newLayers = layers.map(l => {
+      if (layer.id === l.id) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { sourceId: _previous, ...rest } = l as ActivityLayer;
+        return { ...rest, filter: { ...l.filter, activity: filter }, ...(sourceId ? { sourceId } : null) };
       }
       return l;
     });
@@ -1100,6 +1118,8 @@
                 on:duplicate={() => handleDuplicateLayer(layer)}
                 on:filterChange={({ detail: { filter } }) =>
                   handleUpdateLayerProperty('filter', { activity: filter }, layer)}
+                on:activitySourceChange={({ detail: { filter, sourceId } }) =>
+                  handleUpdateActivityLayerSource(sourceId, filter, layer)}
               />
             {/each}
           </div>

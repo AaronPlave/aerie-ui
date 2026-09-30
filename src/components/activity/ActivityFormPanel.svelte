@@ -25,6 +25,8 @@
   } from '../../stores/plan';
   import { selectedSpan, simulationDatasetId, spanUtilityMaps, spansMap } from '../../stores/simulation';
   import { tags } from '../../stores/tags';
+  import { getTimelineSourceCatalog } from '../../stores/timelineSourceCatalog';
+  import { selectedSourceSpan } from '../../stores/timelineSources';
   import type { ActivityDirective, ActivityDirectiveRevision } from '../../types/activity';
   import type { User } from '../../types/app';
   import type { SpanId } from '../../types/simulation';
@@ -39,7 +41,11 @@
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import ActivityDirectiveChangelog from './ActivityDirectiveChangelog.svelte';
   import ActivityDirectiveForm from './ActivityDirectiveForm.svelte';
+  import ImportedIntervalDetails from '../timeline/ImportedIntervalDetails.svelte';
   import ActivitySpanForm from './ActivitySpanForm.svelte';
+
+  // SPIKE 3: registry for resolving an imported span's source/parent.
+  const timelineSources = getTimelineSourceCatalog().sources;
 
   export let gridSection: ViewGridSection;
   export let user: User | null;
@@ -248,6 +254,8 @@
         on:select={onSelectSpan}
         on:jumpToDirectiveParameter={onJumpToDirectiveParameter}
       />
+    {:else if $selectedSourceSpan}
+      <ImportedIntervalDetails span={$selectedSourceSpan} timelineSources={timelineSources ? $timelineSources : null} />
     {:else}
       <div class="st-typography-label p-2">No Activity Selected</div>
     {/if}

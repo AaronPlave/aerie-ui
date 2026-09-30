@@ -14,6 +14,7 @@
   import type { ExternalEvent, ExternalEventId } from '../../types/external-event';
   import type { Plan } from '../../types/plan';
   import type { Span, SpanId, SpansMap, SpanUtilityMaps } from '../../types/simulation';
+  import type { SpanKey } from '../../types/timelineSource';
   import type {
     DiscreteOptions,
     DiscreteTree,
@@ -40,8 +41,9 @@
     TimelineInteractionMode,
     TimelineLockStatus,
   } from '../../utilities/timeline';
+  import { getSpanKey, getSpanKeyForSpan } from '../../utilities/timelineSources';
 
-  type Id = ActivityDirectiveId | ExternalEventId | SpanId;
+  type Id = ActivityDirectiveId | ExternalEventId | SpanKey;
   type IdToColorMap = Record<Id, string>;
   type IdToColorMaps = { directives: IdToColorMap; external_events: IdToColorMap; spans: IdToColorMap };
 
@@ -81,6 +83,11 @@
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
   export let selectedSpanId: SpanId | null = null;
+  /**
+   * SPIKE 3: timeline-wide span selection. `selectedSpanId` alone is ambiguous once two sources both
+   * have a span 1; highlight compares (source, span_id). Defaults to the default-source span.
+   */
+  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let showDirectives: boolean = true;
   export let showSpans: boolean = true;
   export let spanUtilityMaps: SpanUtilityMaps;
@@ -119,7 +126,7 @@
   let quadtreeSpans: Quadtree<QuadtreeRect>;
   let quadtreeExternalEvents: Quadtree<QuadtreeRect>;
   let visibleActivityDirectivesById: Record<ActivityDirectiveId, ActivityDirective> = {};
-  let visibleSpansById: Record<SpanId, Span> = {};
+  let visibleSpansById: Record<SpanKey, Span> = {};
   let visibleExternalEventsById: Record<ExternalEventId, ExternalEvent> = {};
   let rowHeight: number;
 
@@ -143,6 +150,12 @@
   $: rowHeight = discreteOptions.height;
   $: planStartTimeMs = planStartTimeYmd ? new Date(planStartTimeYmd).getTime() : 0;
   $: timelineLocked = timelineLockStatus === TimelineLockStatus.Locked;
+  $: effectiveSelectedSpanKey =
+    selectedSpanKey !== undefined
+      ? selectedSpanKey
+      : selectedSpanId !== null
+        ? getSpanKey({ sourceId: null, spanId: selectedSpanId })
+        : null;
 
   // the following are NOT mutually exclusive.
   $: canDrawActivities =
@@ -178,7 +191,8 @@
   $: if (
     selectedExternalEventId !== undefined &&
     selectedActivityDirectiveId !== undefined &&
-    selectedSpanId !== undefined
+    selectedSpanId !== undefined &&
+    effectiveSelectedSpanKey !== undefined
   ) {
     draw();
   }
@@ -383,12 +397,16 @@
 
       let newSelectedActivityDirectiveId = null;
       let newSelectedSpanId = null;
+      let newSelectedSpan: Span | null = null;
       let newSelectedExternalEventId: ExternalEventId | null = null;
 
       if (activityDirectives.length > 0) {
         newSelectedActivityDirectiveId = activityDirectives[0].id;
       } else if (spans.length > 0) {
-        newSelectedSpanId = spans[0].span_id;
+        newSelectedSpan = spans[0];
+        // SPIKE 3: a span_id only means something in its own source; plan-scoped consumers get it
+        // only for default-source spans.
+        newSelectedSpanId = spans[0].sourceId ? null : spans[0].span_id;
       } else if (externalEvents.length > 0) {
         newSelectedExternalEventId = getExternalEventRowId(externalEvents[0].pkey);
       }
@@ -398,6 +416,7 @@
         origin: 'layer-discrete',
         selectedActivityDirectiveId: newSelectedActivityDirectiveId ?? undefined,
         selectedExternalEventId: newSelectedExternalEventId ?? undefined,
+        selectedSpan: newSelectedSpan ?? undefined,
         selectedSpanId: newSelectedSpanId ?? undefined,
       });
     }
@@ -485,7 +504,7 @@
   // TODO: as height reduces, merge items into the same rows, and make labels disappear. This might require significantly reworking this method.
   function drawCompactMode() {
     if (xScaleView !== null) {
-      const seenSpans: Record<number, boolean> = {};
+      const seenSpans: Record<SpanKey, boolean> = {};
       const itemsToDraw: DiscreteTreeNodeDrawItem[] = [];
 
       // Aggregate Activity Drawables
@@ -501,7 +520,7 @@
             let childSpanInView = false;
             const childSpan = getSpanForActivityDirective(directive);
             if (childSpan) {
-              seenSpans[childSpan.span_id] = true;
+              seenSpans[getSpanKeyForSpan(childSpan)] = true;
               childSpanInView = spanInView(childSpan, viewTimeRange);
             }
             if (directiveInView(directive, viewTimeRange) || (childSpanInView && showSpans)) {
@@ -515,7 +534,7 @@
         }
         if (showSpans) {
           spans.forEach(span => {
-            if (seenSpans[span.span_id] || !xScaleView) {
+            if (seenSpans[getSpanKeyForSpan(span)] || !xScaleView) {
               return;
             }
             if (spanInView(span, viewTimeRange)) {
@@ -602,7 +621,7 @@
   function drawCollapsedMode() {
     // collect items to draw, similar to drawing compact mode
     const itemsToDraw: DiscreteTreeNodeDrawItem[] = [];
-    const seenSpans: Record<number, boolean> = {};
+    const seenSpans: Record<SpanKey, boolean> = {};
 
     // activities
     if (showDirectives) {
@@ -616,7 +635,7 @@
         let childSpanInView = false;
         const childSpan = getSpanForActivityDirective(directive);
         if (childSpan) {
-          seenSpans[childSpan.span_id] = true;
+          seenSpans[getSpanKeyForSpan(childSpan)] = true;
           childSpanInView = spanInView(childSpan, viewTimeRange);
         }
         if (directiveInView(directive, viewTimeRange) || (childSpanInView && showSpans)) {
@@ -630,7 +649,7 @@
     }
     if (showSpans) {
       spans.forEach(span => {
-        if (seenSpans[span.span_id] || !xScaleView) {
+        if (seenSpans[getSpanKeyForSpan(span)] || !xScaleView) {
           return;
         }
         if (spanInView(span, viewTimeRange)) {
@@ -801,9 +820,10 @@
         const unfinished = span.duration === null;
         const spanEndX = xScaleView(span.endMs);
         const spanRectWidth = Math.max(2, Math.min(spanEndX, drawWidth) - spanStartX);
-        const spanColor = idToColorMaps.spans[span.span_id] || discreteDefaultColor;
+        const spanKey = getSpanKeyForSpan(span);
+        const spanColor = idToColorMaps.spans[spanKey] || discreteDefaultColor;
         const isSelected =
-          selectedSpanId === span.span_id || (directive && selectedActivityDirectiveId === directive.id);
+          effectiveSelectedSpanKey === spanKey || (directive && selectedActivityDirectiveId === directive.id);
         if (isSelected) {
           if (unfinished) {
             ctx.fillStyle = activityUnfinishedSelectedColor;
@@ -834,16 +854,16 @@
             }
           }
           if (shouldDrawLabel) {
-            const spanColor = idToColorMaps.spans[span.span_id] || discreteDefaultColor;
+            const spanColor = idToColorMaps.spans[spanKey] || discreteDefaultColor;
             drawLabel(label, spanStartX, y, spanLabelWidth, spanColor, unfinished, isSelected);
           }
         }
 
         // Add to quadtree
-        visibleSpansById[span.span_id] = span;
+        visibleSpansById[spanKey] = span;
         quadtreeSpans.add({
           height: rowHeight,
-          id: span.span_id,
+          id: spanKey,
           width: Math.max(spanLabelWidth, spanRectWidth),
           x: spanStartX,
           y,
@@ -854,7 +874,9 @@
       if (directive && typeof directiveStartX === 'number') {
         const directiveColor = idToColorMaps.directives[directive.id] || discreteDefaultColor;
         const color = hexToRgba(shadeColor(directiveColor || '#FF0000', 1.2), 1);
-        const isSelected = selectedActivityDirectiveId === directive.id || (span && selectedSpanId === span.span_id);
+        const isSelected =
+          selectedActivityDirectiveId === directive.id ||
+          (span && effectiveSelectedSpanKey === getSpanKeyForSpan(span));
         let directiveLabelWidth = 0;
         const anchored = directive.anchor_id !== null;
         if (isSelected) {
@@ -886,7 +908,7 @@
 
             // Draw anchor
             if (anchored) {
-              const anchorOpacity = selectedActivityDirectiveId !== null || selectedSpanId !== null ? 0.4 : 1;
+              const anchorOpacity = selectedActivityDirectiveId !== null || effectiveSelectedSpanKey !== null ? 0.4 : 1;
               drawAnchorIcon(
                 directiveStartX + directiveLabelWidth + anchorIconMarginLeft,
                 y + rowHeight / 2 - anchorIconWidth / 2,
@@ -931,7 +953,9 @@
     } else {
       // if _anything_ selected, decrease opacity
       const opacity =
-        selectedActivityDirectiveId !== null || selectedSpanId !== null || selectedExternalEventId !== null ? 0.4 : 1;
+        selectedActivityDirectiveId !== null || effectiveSelectedSpanKey !== null || selectedExternalEventId !== null
+          ? 0.4
+          : 1;
       ctx.fillStyle = getRGBAFromHex(shadeColor(color, 2.8), opacity);
     }
     ctx.fillText(text, Math.max(x + labelPaddingLeft, minRectSize), y + rowHeight / 2, width);

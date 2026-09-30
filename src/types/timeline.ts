@@ -27,6 +27,11 @@ export type DiscreteTreeExpansionMap = Record<string, boolean>;
 
 export interface ActivityLayer extends Layer {
   activityColor: string;
+  /**
+   * SPIKE 3: the source slot whose intervals this layer's (unchanged) activity filter selects from.
+   * Absent means the timeline's default source (on the plan page: directives + simulated spans).
+   */
+  sourceId?: string;
 }
 export interface ExternalEventLayer extends Layer {
   externalEventColor: string;
@@ -165,6 +170,8 @@ export type MouseOver = {
   row?: Row;
   selectedActivityDirectiveId?: ActivityDirectiveId | undefined;
   selectedExternalEventId?: ExternalEventId | undefined;
+  /** SPIKE 3: the span itself (carries its sourceId). `selectedSpanId` is only set for default-source spans. */
+  selectedSpan?: Span;
   selectedSpanId?: SpanId;
   spans?: Span[];
 };

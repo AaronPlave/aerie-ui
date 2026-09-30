@@ -20,7 +20,7 @@
     LineLayer,
     MouseOver,
   } from '../../types/timeline';
-  import type { TimelineSourceRegistry } from '../../types/timelineSource';
+  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import { getResourceForLayer } from '../../utilities/timeline';
   import { getSourceLabel } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
@@ -45,6 +45,7 @@
   export let yAxes: Axis[];
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedSpanId: SpanId | null = null;
+  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let selectedExternalEventId: ExternalEventId | null = null;
 
   let resourceLabels: {
@@ -169,6 +170,7 @@
               {discreteTree}
               {selectedActivityDirectiveId}
               {selectedSpanId}
+              {selectedSpanKey}
               {selectedExternalEventId}
               on:discrete-tree-node-change
               on:mouseDown
