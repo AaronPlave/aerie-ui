@@ -17,7 +17,7 @@ import type { Axis } from '../types/timeline';
 import { createSpanUtilityMaps } from '../utilities/activities';
 import gql from '../utilities/gql';
 import { getSimulationProgress } from '../utilities/simulation';
-import { planDatasets, planId, planModelId, planModelRevision, planRevision } from './plan';
+import { planId, planModelId, planModelRevision, planRevision } from './plan';
 import { gqlSubscribable } from './subscribable';
 
 /* Writeable. */
@@ -89,36 +89,6 @@ export const selectedSpanId: Writable<SpanId | null> = writable(null);
 export const selectedSimulationEventId: Writable<number | null> = writable(null);
 
 /* Derived. */
-
-export const allResourceTypes: Readable<ResourceType[]> = derived(
-  [resourceTypes, planDatasets, simulationDatasetId],
-  ([$resourceTypes, $planDatasets, $simulationDatasetId]) => {
-    const seen = new Set<string>();
-    const out: ResourceType[] = [];
-    // Add resource types from the model
-    for (const { name, schema } of $resourceTypes) {
-      if (!seen.has(name)) {
-        seen.add(name);
-        out.push({ name, schema });
-      }
-    }
-    // Add resource types from datasets tied to the current sim or untied to any sim (plan-level).
-    for (const planDataset of $planDatasets) {
-      const tiedToOtherSim =
-        planDataset.simulation_dataset_id !== null && planDataset.simulation_dataset_id !== $simulationDatasetId;
-      if (tiedToOtherSim) {
-        continue;
-      }
-      for (const profile of planDataset.dataset.profiles) {
-        if (!seen.has(profile.name)) {
-          seen.add(profile.name);
-          out.push({ name: profile.name, schema: profile.type.schema });
-        }
-      }
-    }
-    return out;
-  },
-);
 
 export const spansMap: Readable<SpansMap | null> = derived(spans, $spans => (!spans ? null : keyBy($spans, 'span_id')));
 
