@@ -43,7 +43,7 @@ export function createExternalResourceSubscription(
   user: User | null,
 ): ExternalResourceSubscription {
   const initialState: TimelineResourceState = { error: '', loading: true, resource: null };
-  acquireTimelineResource(simDatasetId, name);
+  acquireTimelineResource(simDatasetId, name, 'external');
   setTimelineResourceState(simDatasetId, name, 'external', initialState);
   const state = writable<TimelineResourceState>(initialState);
   function setState(next: TimelineResourceState) {
@@ -262,7 +262,7 @@ export function createExternalResourceSubscription(
         return;
       }
       disposed = true;
-      releaseTimelineResource(simDatasetId, name);
+      releaseTimelineResource(simDatasetId, name, 'external');
       abortController.abort();
       unsubscribers.forEach(unsub => unsub());
     },

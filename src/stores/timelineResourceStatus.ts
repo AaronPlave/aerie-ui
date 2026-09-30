@@ -64,12 +64,15 @@ export const timelineResourcesErroring: Readable<TimelineResourceError[]> = deri
   return errors;
 });
 
-function registryKey(datasetId: number, name: string): string {
-  return `${datasetId}:${name}`;
+// `kind` is part of the key. The two writers key on different id spaces (profiles on
+// merlin.dataset.id, external resources on simulation_dataset.id), so (id, name) alone can collide,
+// e.g. simulation_dataset 12's external "/battery/soc" and dataset 12's profile "/battery/soc".
+function registryKey(datasetId: number, name: string, kind: TimelineResourceKind): string {
+  return `${kind}:${datasetId}:${name}`;
 }
 
-export function acquireTimelineResource(datasetId: number, name: string): void {
-  const key = registryKey(datasetId, name);
+export function acquireTimelineResource(datasetId: number, name: string, kind: TimelineResourceKind): void {
+  const key = registryKey(datasetId, name, kind);
   refCounts.set(key, (refCounts.get(key) ?? 0) + 1);
 }
 
@@ -79,12 +82,12 @@ export function setTimelineResourceState(
   kind: TimelineResourceKind,
   state: TimelineResourceState,
 ): void {
-  const key = registryKey(datasetId, name);
+  const key = registryKey(datasetId, name, kind);
   resourceStates.update(m => new Map(m).set(key, { ...state, datasetId, kind, name }));
 }
 
-export function releaseTimelineResource(datasetId: number, name: string): void {
-  const key = registryKey(datasetId, name);
+export function releaseTimelineResource(datasetId: number, name: string, kind: TimelineResourceKind): void {
+  const key = registryKey(datasetId, name, kind);
   const next = (refCounts.get(key) ?? 1) - 1;
   if (next <= 0) {
     refCounts.delete(key);
