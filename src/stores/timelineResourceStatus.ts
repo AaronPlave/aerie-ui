@@ -8,7 +8,9 @@ import type { Resource } from '../types/simulation';
 // travels with each entry so the indicator can label errors with the right
 // source ("Profile" vs "External profile") instead of mixing them.
 
-export type TimelineResourceKind = 'sim' | 'external';
+// 'external' entries are keyed on the simulation_dataset id the legacy name lookup is scoped to;
+// 'externalDataset' entries (source-bound layers) on the merlin.dataset id of one plan_dataset.
+export type TimelineResourceKind = 'sim' | 'external' | 'externalDataset';
 
 export type TimelineResourceState = {
   error: string;

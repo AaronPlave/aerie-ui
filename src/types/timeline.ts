@@ -1,3 +1,4 @@
+import type { TimelineSourceId } from './timelineSource';
 import type { Selection } from 'd3-selection';
 import type { ActivityFilterField, ExternalEventFilterField } from '../enums/filter';
 import type { ActivityDirective, ActivityDirectiveId, ActivityType } from './activity';
@@ -127,6 +128,12 @@ export interface Layer {
   };
   id: number;
   name: string;
+  /**
+   * The timeline source this layer reads from (see types/timelineSource.ts). Absent on layers that predate
+   * sources: activity layers then mean the Plan, and resource layers keep the legacy merged lookup (model
+   * simulation profiles, then attached external datasets).
+   */
+  sourceId?: TimelineSourceId;
   yAxisId: number | null;
 }
 
@@ -309,6 +316,13 @@ export type TimelineItemType = ResourceType | ActivityType | ExternalEventType;
 
 export type TimelineItemMetadata = {
   selectedFilters?: Record<string, TimelineItemListFilterOption>;
+  /**
+   * Set when the items come from the Sources browser: the source the new layer binds to (null for items that
+   * use the existing unbound layer path, such as external events). Absent for Plan catalog items.
+   */
+  sourceId?: TimelineSourceId | null;
+  /** User-facing label of `sourceId`, used to label what the new layer shows. */
+  sourceLabel?: string;
   textFilters?: string[];
 };
 

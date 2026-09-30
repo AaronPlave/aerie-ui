@@ -50,6 +50,7 @@ import type {
   XRangeLayer,
   XRangeLayerColorScheme,
 } from '../types/timeline';
+import type { TimelineSourceId } from '../types/timelineSource';
 import { generateRandomPastelColor } from './color';
 import { getExternalEventRowId } from './externalEvents';
 import { filterEmpty, lowercase, stringCompare } from './generic';
@@ -623,7 +624,12 @@ export function createTimelineExternalEventLayer(
   };
 }
 
-export function createTimelineResourceLayer(timelines: Timeline[], resourceType: ResourceType) {
+export function createTimelineResourceLayer(
+  timelines: Timeline[],
+  resourceType: ResourceType,
+  sourceId?: TimelineSourceId,
+  sourceLabel?: string,
+) {
   const { name, schema } = resourceType;
   const { type: schemaType } = schema;
 
@@ -635,15 +641,17 @@ export function createTimelineResourceLayer(timelines: Timeline[], resourceType:
     schemaType === 'duration' ||
     (schemaType === 'struct' && schema?.items?.rate?.type === 'real' && schema?.items?.initial?.type === 'real');
 
+  // A source-bound layer names its source on its axis: several sources can provide the same resource name.
   const yAxis = createYAxis(timelines, {
-    label: { text: `${name}${unit ? ` (${unit})` : ''}` },
+    label: { text: `${name}${unit ? ` (${unit})` : ''}${sourceId && sourceLabel ? ` · ${sourceLabel}` : ''}` },
     tickCount: isNumericSchema ? 5 : 0,
   });
 
+  const source = sourceId ? { sourceId } : {};
   const layer = isDiscreteSchema
-    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name } })
+    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
     : isNumericSchema
-      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name } })
+      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
       : null;
 
   return { layer, yAxis };
@@ -945,10 +953,14 @@ export function minMaxDecimation<T>(
 }
 
 /**
- * Filters list of resources by the layer's resource filter
+ * Finds the layer's resource among loaded resources. A resource matches on name and on source: a resource
+ * loaded for a source-bound layer carries that source, and legacy (unbound) resources carry none, so the same
+ * name from two sources in one row never resolves to the wrong one.
  */
-export function getResourceForLayer(layer: Layer, resources: Resource[] | ResourceType[]) {
-  return resources.find(resource => layer.filter.resource === resource.name);
+export function getResourceForLayer<T extends Pick<Resource, 'name' | 'sourceId'>>(layer: Layer, resources: T[]) {
+  return resources.find(
+    resource => layer.filter.resource === resource.name && (resource.sourceId ?? null) === (layer.sourceId ?? null),
+  );
 }
 
 /**

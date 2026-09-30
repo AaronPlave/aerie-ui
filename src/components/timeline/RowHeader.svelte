@@ -20,7 +20,9 @@
     LineLayer,
     MouseOver,
   } from '../../types/timeline';
+  import { timelineSources } from '../../stores/timelineSources';
   import { getResourceForLayer } from '../../utilities/timeline';
+  import { getSourceLabel } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import DropTarget from './DropTarget.svelte';
   import RowHeaderDiscreteTree from './RowHeaderDiscreteTree.svelte';
@@ -87,7 +89,12 @@
           const resourceLabel = {
             chartType: layer.chartType,
             color,
-            label: layer.name || layerResource.name,
+            // Name the source of a source-bound layer: one row can hold the same resource from several sources.
+            label:
+              layer.name ||
+              (layer.sourceId
+                ? `${layerResource.name} · ${getSourceLabel($timelineSources, layer.sourceId)}`
+                : layerResource.name),
             resource: layerResource,
             unit,
             yAxisId: yAxis.id,

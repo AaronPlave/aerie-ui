@@ -526,6 +526,7 @@ export function applyViewDefinitionMigrations(viewDefinition: ViewDefinition): {
       0: migrateViewDefinitionV0toV1,
       1: migrateViewDefinitionV1toV2,
       2: migrateViewDefinitionV2toV3,
+      3: migrateViewDefinitionV3toV4,
     };
 
     // Iterate through versions between view version and latest view version
@@ -699,4 +700,15 @@ export function migrateViewDefinitionV2toV3(viewDefinition: ViewDefinition) {
     },
     version: 3,
   };
+}
+
+export function migrateViewDefinitionV3toV4(viewDefinition: ViewDefinition) {
+  /*
+    Summary of migrations:
+    - Layers may carry a `sourceId` naming the timeline source they read from. Existing layers are left
+      without one on purpose: an activity layer without a source means the Plan, and a resource layer without
+      a source keeps the legacy merged lookup (simulation profiles, then attached external datasets). Writing
+      a source here would silently narrow what existing views show.
+  */
+  return { ...viewDefinition, version: 4 };
 }

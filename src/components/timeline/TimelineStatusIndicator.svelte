@@ -47,7 +47,7 @@
     ([resourceErrs, directivesErr, constraintsErr, eventsErr]) => {
       const out: StatusError[] = [];
       resourceErrs.forEach(e => {
-        const label = e.kind === 'external' ? 'External profile' : 'Profile';
+        const label = e.kind === 'sim' ? 'Profile' : 'External profile';
         out.push({ message: e.error, source: `${label} ${e.name}` });
       });
       if (directivesErr) {

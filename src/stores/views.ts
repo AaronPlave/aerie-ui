@@ -30,6 +30,7 @@ import {
   isLineLayer,
   isXRangeLayer,
 } from '../utilities/timeline';
+import { PLAN_SOURCE_ID, resolveActivityLayerSourceId } from '../utilities/timelineSources';
 import { createColumnSizes, createRowSizes, parseColumnSizes } from '../utilities/view';
 import { gqlSubscribable } from './subscribable';
 
@@ -622,6 +623,7 @@ export function getUpdatedLayerWithFilters(
   row?: Row,
 ): { layer: Layer; yAxis?: Axis } {
   const itemNames = items.map(i => i.name);
+  const sourceId = metadata?.sourceId ?? undefined;
   // Create a suitable layer if not provided
   if (!layer) {
     if (type === 'activity') {
@@ -630,6 +632,7 @@ export function getUpdatedLayerWithFilters(
         layer: createTimelineActivityLayer(timelines, {
           activityColor: getUniqueColorForActivityLayer(row),
           filter: { activity: updatedActivityFilter },
+          ...(sourceId ? { sourceId } : {}),
         }),
       };
     } else if (type === 'externalEvent') {
@@ -639,7 +642,12 @@ export function getUpdatedLayerWithFilters(
         }),
       };
     } else {
-      const { layer: newLayer, yAxis } = createTimelineResourceLayer(timelines, items[0] as ResourceType);
+      const { layer: newLayer, yAxis } = createTimelineResourceLayer(
+        timelines,
+        items[0] as ResourceType,
+        sourceId,
+        metadata?.sourceLabel,
+      );
       if (newLayer && newLayer.filter.resource) {
         // Add remaining resources if requested (generally avoided since resource layers are usually created on separate layers)
         newLayer.filter.resource = itemNames.length ? itemNames[0] : '';
@@ -755,6 +763,10 @@ export function viewAddFilterItemsToRow(
       // Case where the target layer type does not match the destination layer chart type
       (layer.chartType === 'activity' && typeName === 'resource') ||
       (layer.chartType !== 'activity' && typeName === 'activity') ||
+      // An activity layer reads from one source; items from another source need their own layer
+      (typeName === 'activity' &&
+        metadata?.sourceId !== undefined &&
+        resolveActivityLayerSourceId(layer) !== (metadata.sourceId ?? PLAN_SOURCE_ID)) ||
       (layer.chartType !== 'externalEvent' && typeName === 'externalEvent')
     ) {
       // Add to existing row

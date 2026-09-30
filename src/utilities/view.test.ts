@@ -3,6 +3,7 @@ import viewV0Migrated from '../tests/mocks/view/v0/view-migrated.json';
 import viewV0 from '../tests/mocks/view/v0/view.json';
 import viewV1 from '../tests/mocks/view/v1/view.json';
 import viewV3 from '../tests/mocks/view/v3/view.json';
+import viewV4 from '../tests/mocks/view/v4/view.json';
 import {
   applyViewDefinitionMigrations,
   generateDefaultView,
@@ -72,6 +73,20 @@ describe('generateDefaultViewWithEvents', () => {
   });
 });
 
+describe('validateViewJSONAgainstSchema v4', () => {
+  test('Should accept source-bound layers and legacy layers side by side', async () => {
+    const definition = structuredClone(viewV4) as any;
+    const row = definition.plan.timelines[0].rows.find((r: any) =>
+      r.layers.some((layer: any) => layer.chartType === 'line'),
+    );
+    const line = row.layers.find((layer: any) => layer.chartType === 'line');
+    row.layers.push({ ...line, id: 9001, sourceId: 'external-dataset:12' });
+    const { valid, errors } = validateViewJSONAgainstSchema(definition);
+    expect(errors).to.deep.equal([]);
+    expect(valid).toBe(true);
+  });
+});
+
 describe('applyViewDefinitionMigrations', () => {
   test('Should migrate a view from v0 -> v1', async () => {
     const migratedView = migrateViewDefinitionV0toV1(viewV0 as any);
@@ -84,13 +99,22 @@ describe('migrateViewDefinition', () => {
     const { anyMigrationsApplied, error, migratedViewDefinition } = applyViewDefinitionMigrations(viewV1 as any);
     expect(anyMigrationsApplied).toBeTruthy();
     expect(error).toBeNull();
-    expect(migratedViewDefinition).to.deep.eq(viewV3);
+    expect(migratedViewDefinition).to.deep.eq(viewV4);
+  });
+  test('Should migrate v3 -> v4 without binding existing layers to a source', async () => {
+    const { anyMigrationsApplied, error, migratedViewDefinition } = applyViewDefinitionMigrations(viewV3 as any);
+    expect(anyMigrationsApplied).toBeTruthy();
+    expect(error).toBeNull();
+    expect(migratedViewDefinition).to.deep.eq(viewV4);
+    const layers = migratedViewDefinition?.plan.timelines.flatMap(timeline => timeline.rows.flatMap(row => row.layers));
+    expect(layers?.length).toBeGreaterThan(0);
+    expect(layers?.some(layer => 'sourceId' in layer)).toBe(false);
   });
   test('Should apply no view migrations to a migration matching current version', async () => {
-    const { anyMigrationsApplied, error, migratedViewDefinition } = applyViewDefinitionMigrations(viewV3 as any);
+    const { anyMigrationsApplied, error, migratedViewDefinition } = applyViewDefinitionMigrations(viewV4 as any);
     expect(anyMigrationsApplied).toBeFalsy();
     expect(error).toBeNull();
-    expect(migratedViewDefinition).to.deep.eq(viewV3);
+    expect(migratedViewDefinition).to.deep.eq(viewV4);
   });
   test('Should return errors if migration fails', async () => {
     const invalidView = structuredClone(viewV0);

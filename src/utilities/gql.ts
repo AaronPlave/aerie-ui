@@ -3416,6 +3416,19 @@ const gql = {
     }
   `,
 
+  SUB_SIMULATION_DATASET_PROFILES: `#graphql
+    subscription SubSimulationDatasetProfiles($simulationDatasetId: Int!) {
+      ${Queries.SIMULATION_DATASET}(id: $simulationDatasetId) {
+        dataset {
+          profiles {
+            name
+            type
+          }
+        }
+      }
+    }
+  `,
+
   SUB_SIMULATION_TEMPLATES: `#graphql
     subscription SubSimTemplates($modelId: Int!) {
       templates: ${Queries.SIMULATION_TEMPLATES}(where: { model_id: { _eq: $modelId } }) {

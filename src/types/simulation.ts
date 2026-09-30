@@ -1,3 +1,4 @@
+import type { TimelineSourceId } from './timelineSource';
 import type { ActivityDirectiveId } from './activity';
 import type { UserId } from './app';
 import type { ConsoleEntry } from './console';
@@ -41,6 +42,8 @@ export type ProfileSegment = {
 export type Resource = {
   name: string;
   schema: ValueSchema;
+  /** Set by the timeline on resources loaded for a source-bound layer; absent in the legacy namespace. */
+  sourceId?: TimelineSourceId;
   values: ResourceValue[];
 };
 
@@ -48,8 +51,11 @@ export type ResourceRequest = {
   error: string;
   loading: boolean;
   resource: Resource | null;
-  simulationDatasetId: number;
-  type: 'internal' | 'external';
+  /** The data revision the request was made against; the request restarts when it changes. */
+  revisionKey: string;
+  type: 'internal' | 'external' | 'source';
+  /** The layer's source is not available; `error` says why. */
+  unavailable?: boolean;
   unsubscribe?: () => void;
 };
 

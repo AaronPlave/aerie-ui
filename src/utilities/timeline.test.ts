@@ -543,6 +543,15 @@ test('getResourceForLayer', () => {
   const layer3 = createTimelineLineLayer([], []);
   layer3.filter.resource = 'resourceA';
   expect(getResourceForLayer(layer3, [resourceA, resourceB])).to.deep.equal(resourceA);
+
+  // The same name from two sources: a layer only resolves to the resource from its own source.
+  const fromDatasetA = { ...resourceA, sourceId: 'external-dataset:1' };
+  const fromDatasetB = { ...resourceA, sourceId: 'external-dataset:2' };
+  const layer4 = { ...createTimelineLineLayer([], []), sourceId: 'external-dataset:2' };
+  layer4.filter.resource = 'resourceA';
+  expect(getResourceForLayer(layer4, [resourceA, fromDatasetA, fromDatasetB])).toBe(fromDatasetB);
+  expect(getResourceForLayer(layer4, [resourceA, fromDatasetA])).toBeUndefined();
+  expect(getResourceForLayer(layer3, [fromDatasetA, fromDatasetB, resourceA])).toBe(resourceA);
 });
 
 // TODO - should we make a test case for filtering the sources in an ExternalEventsLayer?

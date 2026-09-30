@@ -10,6 +10,7 @@
   import TimelineXRangeLayerIcon from '../../../../assets/timeline-x-range-layer.svg?component';
   import { ViewDiscreteLayerColorPresets, ViewLineLayerColorPresets } from '../../../../constants/view';
   import { externalResourceNames, resourceTypes } from '../../../../stores/simulation';
+  import { timelineSources } from '../../../../stores/timelineSources';
   import type { RadioButtonId } from '../../../../types/radio-buttons';
   import type {
     ActivityLayer,
@@ -20,7 +21,9 @@
     Layer,
     ResourceLayerFilter,
   } from '../../../../types/timeline';
+  import type { TimelineSource } from '../../../../types/timelineSource';
   import { isActivityLayer, isExternalEventLayer, isLineLayer, isXRangeLayer } from '../../../../utilities/timeline';
+  import { getSource, PLAN_SOURCE_ID, resolveActivityLayerSourceId } from '../../../../utilities/timelineSources';
   import { tooltip } from '../../../../utilities/tooltip';
   import ColorPresetsPicker from '../../../form/ColorPresetsPicker.svelte';
   import ColorSchemePicker from '../../../form/ColorSchemePicker.svelte';
@@ -46,6 +49,7 @@
     duplicate: void;
     filterChange: { filter: ResourceLayerFilter | ExternalEventLayerFilter };
     remove: void;
+    sourceChange: { filter?: ResourceLayerFilter; sourceId: string | null };
     updateChartType: ChartType;
     updateLayer: { property: string; value: string | number | boolean | object | null };
     visibilityChange: void;
@@ -72,10 +76,59 @@
 
   $: name = getLayerName(layer);
 
-  $: resourceNames = $resourceTypes
-    .map(type => type.name)
-    .concat($externalResourceNames)
-    .sort();
+  // The legacy (unbound) resource namespace: model resources plus every attached external profile name.
+  $: legacyResourceNames = [...new Set($resourceTypes.map(type => type.name).concat($externalResourceNames))].sort();
+
+  type SourceOption = { label: string; value: string };
+  $: resourceSources = $timelineSources.sources.filter(source => source.resources);
+  $: intervalSources = $timelineSources.sources.filter(source => source.intervals);
+  $: layerSource = getSource($timelineSources, layer.sourceId);
+  $: resourceSourceOptions = getSourceOptions(resourceSources, layer.sourceId, [
+    { label: 'Any (simulation, then attached datasets)', value: '' },
+  ]);
+  $: activitySourceId = resolveActivityLayerSourceId(layer);
+  $: activitySourceOptions = getSourceOptions(intervalSources, activitySourceId, []);
+  // A source-bound layer offers only its source's catalog; an unbound layer offers the legacy namespace.
+  $: resourceNames = layer.sourceId
+    ? (layerSource?.resources?.catalog ?? []).map(type => type.name)
+    : legacyResourceNames;
+  $: resourceOptions = [
+    ...resourceNames.map(resourceName => ({ display: resourceName, value: resourceName })),
+    ...(layer.filter.resource && !resourceNames.includes(layer.filter.resource)
+      ? [{ display: `${layer.filter.resource} (not in source)`, value: layer.filter.resource }]
+      : []),
+  ];
+
+  function getSourceOptions(
+    sources: TimelineSource[],
+    selectedSourceId: string | undefined,
+    leading: SourceOption[],
+  ): SourceOption[] {
+    const options = leading.concat(
+      sources.map(source => ({ label: `${source.group} · ${source.label}`, value: source.id })),
+    );
+    // Keep a binding to a source that is not available visible (and selected) rather than dropping it.
+    if (selectedSourceId && !options.some(option => option.value === selectedSourceId)) {
+      options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
+    }
+    return options;
+  }
+
+  function onResourceSourceChange(event: Event) {
+    const sourceId = (event.target as HTMLSelectElement).value || null;
+    const catalog = sourceId
+      ? (getSource($timelineSources, sourceId)?.resources?.catalog ?? []).map(type => type.name)
+      : legacyResourceNames;
+    const current = layer.filter.resource ?? '';
+    // Keep the resource when the new source has the same name (e.g. /battery/soc in another dataset).
+    dispatch('sourceChange', { filter: catalog.includes(current) ? current : '', sourceId });
+  }
+
+  function onActivitySourceChange(event: Event) {
+    const sourceId = (event.target as HTMLSelectElement).value;
+    // The Plan is the default for activity layers, so a Plan binding is stored explicitly only if it was already.
+    dispatch('sourceChange', { sourceId: sourceId === PLAN_SOURCE_ID && !layer.sourceId ? null : sourceId });
+  }
 
   function getLayerName(layer: Layer) {
     if (isActivityLayer(layer)) {
@@ -140,88 +193,115 @@
         />
       {/if}
     </div>
-    {#if isActivityLayer(layer)}
-      {@const filterCount = getActivityLayerFilterCount(layer)}
-      <ActivityFilterBuilder
-        layerName={layer.name}
-        filter={layer.filter.activity}
-        on:filterChange
-        on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}
-        bind:this={activityFilterMenu}
-      >
-        <button
-          aria-label="Toggle activity filter builder modal"
-          slot="trigger"
-          on:click|stopPropagation={toggleActivityFilterMenu}
-          class="st-button icon w-full"
-          style:position="relative"
-          use:tooltip={{
-            content: `Filter Activities${filterCount > 0 ? ` (${filterCount} applied)` : ''}`,
-            placement: 'top',
-          }}
+    <div class="layer-controls">
+      {#if isActivityLayer(layer)}
+        <select
+          class="st-select source-select"
+          aria-label="Activity source"
+          value={activitySourceId}
+          on:change={onActivitySourceChange}
+          use:tooltip={{ content: 'Source', placement: 'top' }}
         >
-          <div class="layer-name st-select">
-            <div class="layer-name-text">
-              {name || 'Activity Layer'}
-            </div>
-            <div class="layer-name-badge">
-              {#if filterCount > 0}
-                <div>{filterCount}</div>
-              {/if}
-              <FilterIcon />
-            </div>
-          </div>
-        </button>
-      </ActivityFilterBuilder>
-    {:else if isLineLayer(layer) || isXRangeLayer(layer)}
-      <SearchableDropdown
-        maxListHeight="400px"
-        selectedOptionLabel={layer.name}
-        selectTooltip={layer.filter.resource || 'Select Resource'}
-        showPlaceholderOption={false}
-        className="w-full"
-        placeholder="Select Resource"
-        searchPlaceholder="Filter resources"
-        selectedOptionValues={layer.filter.resource ? [layer.filter.resource] : []}
-        options={resourceNames.map(resourceName => ({ display: resourceName, value: resourceName }))}
-        on:change={({ detail: values }) => dispatch('filterChange', { filter: values.length ? values[0] : '' })}
-      >
-        <ChevronDownIcon slot="icon" />
-      </SearchableDropdown>
-    {:else if isExternalEventLayer(layer)}
-      {@const filterCount = getExternalEventLayerFilterCount(layer)}
-      <ExternalEventFilterBuilder
-        layerName={layer.name}
-        filter={layer.filter.externalEvent}
-        on:filterChange
-        on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}
-        bind:this={externalEventFilterMenu}
-      >
-        <button
-          aria-label="Toggle external event filter builder modal"
-          slot="trigger"
-          on:click|stopPropagation={toggleExternalEventFilterMenu}
-          class="st-button icon w-full"
-          style:position="relative"
-          use:tooltip={{
-            content: `Filter External Events${filterCount > 0 ? ` (${filterCount} applied)` : ''}`,
-            placement: 'top',
-          }}
+          {#each activitySourceOptions as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      {:else if isLineLayer(layer) || isXRangeLayer(layer)}
+        <select
+          class="st-select source-select"
+          aria-label="Resource source"
+          value={layer.sourceId ?? ''}
+          on:change={onResourceSourceChange}
+          use:tooltip={{ content: 'Source', placement: 'top' }}
         >
-          <div class="layer-name st-select">
-            <div class="layer-name-text">
-              {name || 'External Event Layer'}
-            </div>
-            <div class="layer-name-badge">
-              {#if filterCount > 0}
-                <div>{filterCount}</div>
-              {/if}
-              <FilterIcon />
-            </div>
-          </div></button
+          {#each resourceSourceOptions as option (option.value)}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </select>
+      {/if}
+      {#if isActivityLayer(layer)}
+        {@const filterCount = getActivityLayerFilterCount(layer)}
+        <ActivityFilterBuilder
+          layerName={layer.name}
+          filter={layer.filter.activity}
+          on:filterChange
+          on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}
+          bind:this={activityFilterMenu}
         >
-      </ExternalEventFilterBuilder>
-    {/if}
+          <button
+            aria-label="Toggle activity filter builder modal"
+            slot="trigger"
+            on:click|stopPropagation={toggleActivityFilterMenu}
+            class="st-button icon w-full"
+            style:position="relative"
+            use:tooltip={{
+              content: `Filter Activities${filterCount > 0 ? ` (${filterCount} applied)` : ''}`,
+              placement: 'top',
+            }}
+          >
+            <div class="layer-name st-select">
+              <div class="layer-name-text">
+                {name || 'Activity Layer'}
+              </div>
+              <div class="layer-name-badge">
+                {#if filterCount > 0}
+                  <div>{filterCount}</div>
+                {/if}
+                <FilterIcon />
+              </div>
+            </div>
+          </button>
+        </ActivityFilterBuilder>
+      {:else if isLineLayer(layer) || isXRangeLayer(layer)}
+        <SearchableDropdown
+          maxListHeight="400px"
+          selectedOptionLabel={layer.name}
+          selectTooltip={layer.filter.resource || 'Select Resource'}
+          showPlaceholderOption={false}
+          className="w-full"
+          placeholder="Select Resource"
+          searchPlaceholder="Filter resources"
+          selectedOptionValues={layer.filter.resource ? [layer.filter.resource] : []}
+          options={resourceOptions}
+          on:change={({ detail: values }) => dispatch('filterChange', { filter: values.length ? values[0] : '' })}
+        >
+          <ChevronDownIcon slot="icon" />
+        </SearchableDropdown>
+      {:else if isExternalEventLayer(layer)}
+        {@const filterCount = getExternalEventLayerFilterCount(layer)}
+        <ExternalEventFilterBuilder
+          layerName={layer.name}
+          filter={layer.filter.externalEvent}
+          on:filterChange
+          on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}
+          bind:this={externalEventFilterMenu}
+        >
+          <button
+            aria-label="Toggle external event filter builder modal"
+            slot="trigger"
+            on:click|stopPropagation={toggleExternalEventFilterMenu}
+            class="st-button icon w-full"
+            style:position="relative"
+            use:tooltip={{
+              content: `Filter External Events${filterCount > 0 ? ` (${filterCount} applied)` : ''}`,
+              placement: 'top',
+            }}
+          >
+            <div class="layer-name st-select">
+              <div class="layer-name-text">
+                {name || 'External Event Layer'}
+              </div>
+              <div class="layer-name-badge">
+                {#if filterCount > 0}
+                  <div>{filterCount}</div>
+                {/if}
+                <FilterIcon />
+              </div>
+            </div></button
+          >
+        </ExternalEventFilterBuilder>
+      {/if}
+    </div>
   </div>
   <div class="actions">
     {#if isLineLayer(layer) || isXRangeLayer(layer)}
@@ -260,6 +340,18 @@
 </div>
 
 <style>
+  .layer-controls {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .source-select {
+    width: 100%;
+  }
+
   .timeline-layer-editor {
     align-items: center;
     display: flex;

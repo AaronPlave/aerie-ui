@@ -18,6 +18,7 @@
   import { planModelActivityTypes } from '../../stores/plan';
   import { createProfileSubscription } from '../../stores/profile';
   import { resourceTypes, resourceTypesLoading } from '../../stores/simulation';
+  import { timelineSources } from '../../stores/timelineSources';
   import { selectedRow, viewAddFilterToRow } from '../../stores/views';
   import type {
     ActivityDirective,
@@ -57,6 +58,7 @@
     TimelineItemType,
     XAxisTick,
   } from '../../types/timeline';
+  import type { TimelineResourceSubscription, TimelineResourceSubscriptionContext } from '../../types/timelineSource';
   import { getAllSpansForActivityDirective } from '../../utilities/activities';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
@@ -80,6 +82,15 @@
     spanInView,
     type TimelineLockStatus,
   } from '../../utilities/timeline';
+  import {
+    createStaticResourceSubscription,
+    getLayerResourceRequestKey,
+    getResourceRequestKey,
+    getSource,
+    PLAN_SOURCE_ID,
+    resolveActivityLayerSourceId,
+    resolveResourceLayerSource,
+  } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import ConstraintViolations from './ConstraintViolations.svelte';
   import LayerDiscrete from './LayerDiscrete.svelte';
@@ -179,7 +190,13 @@
   let yAxesWithScaleDomains: Axis[];
   let zoom: ZoomBehavior<SVGElement, unknown>;
 
+  type DesiredResourceRequest = Pick<ResourceRequest, 'revisionKey' | 'type' | 'unavailable'> & {
+    create: () => TimelineResourceSubscription;
+    sourceId?: string;
+  };
+
   let resourceRequestMap: Record<string, ResourceRequest> = {};
+  let resourceSourceErrors: string[] = [];
   let loadedResources: Resource[];
   let resourceLoadingErrors: string[];
   let anyResourcesLoading: boolean = true;
@@ -221,48 +238,79 @@
     }
   });
 
-  $: if (plan && simulationDataset !== null && layers && !$resourceTypesLoading) {
-    const simulationDatasetId = simulationDataset.dataset_id;
-    const resourceNamesSet = new Set<string>();
-    layers.map(layer => {
-      if (layer.chartType === 'line' || layer.chartType === 'x-range') {
-        if (layer.filter.resource) {
-          resourceNamesSet.add(layer.filter.resource);
+  // Resource requests are keyed by (source, name), never by bare name: the same resource name can come from
+  // the simulation and from several external datasets in one row. Layers without a source keep the legacy
+  // merged lookup under their own key (see getResourceRequestKey).
+  $: if (plan && layers) {
+    const context: TimelineResourceSubscriptionContext = { plan, simulationDataset, user };
+    const desired: Record<string, DesiredResourceRequest> = {};
+    layers.forEach(layer => {
+      if ((layer.chartType !== 'line' && layer.chartType !== 'x-range') || !layer.filter.resource) {
+        return;
+      }
+      const name = layer.filter.resource;
+      const key = getResourceRequestKey(layer.sourceId, name);
+      const resolution = resolveResourceLayerSource(layer, $timelineSources);
+      if (resolution.kind === 'legacy') {
+        // Unchanged legacy behavior: requires a simulation dataset and the model's resource types.
+        if (simulationDataset === null || $resourceTypesLoading) {
+          return;
         }
+        const simulation = simulationDataset;
+        const isExternal = !$resourceTypes.find(type => type.name === name);
+        const simProfileStartYmd = simulation.simulation_start_time ?? plan.start_time;
+        desired[key] = {
+          // External datasets are matched by the simulation_dataset *id* (what
+          // plan_dataset.simulation_dataset_id references), whereas internal
+          // profiles are fetched by dataset_id. These are distinct id spaces;
+          // passing dataset_id to the external factory makes its sim-tied
+          // plan_dataset row preference silently never match.
+          create: () =>
+            isExternal
+              ? createExternalResourceSubscription(simulation.id, name, plan.start_time, user)
+              : createProfileSubscription(simulation.dataset_id, name, simProfileStartYmd, user),
+          revisionKey: `legacy:${simulation.dataset_id}`,
+          type: isExternal ? 'external' : 'internal',
+        };
+      } else if (resolution.kind === 'source') {
+        const { resources } = resolution.source;
+        if (resources) {
+          desired[key] = {
+            create: () => resources.subscribe(name, context),
+            revisionKey: resources.revisionKey ?? 'none',
+            sourceId: resolution.source.id,
+            type: 'source',
+          };
+        }
+      } else {
+        const state =
+          resolution.kind === 'loading'
+            ? { error: '', loading: true, resource: null }
+            : { error: resolution.message, loading: false, resource: null };
+        desired[key] = {
+          create: () => createStaticResourceSubscription(state),
+          revisionKey: `static:${resolution.kind}`,
+          type: 'source',
+          unavailable: resolution.kind === 'unavailable',
+        };
       }
     });
-    const resourceNames = Array.from(resourceNamesSet);
 
-    // Drop entries no longer referenced by any layer or whose sim dataset
-    // changed. Both factories own their own registry cleanup on unsubscribe.
+    // Drop entries no longer referenced by any layer or whose data revision changed.
+    // Factories own their own registry cleanup on unsubscribe.
     Object.entries(resourceRequestMap).forEach(([key, value]) => {
-      if (resourceNames.indexOf(key) < 0 || value.simulationDatasetId !== simulationDatasetId) {
+      if (!desired[key] || desired[key].revisionKey !== value.revisionKey) {
         value.unsubscribe?.();
         delete resourceRequestMap[key];
         resourceRequestMap = { ...resourceRequestMap };
       }
     });
 
-    const simProfileStartYmd = simulationDataset?.simulation_start_time ?? plan.start_time;
-    resourceNames.forEach(name => {
-      if (
-        resourceRequestMap[name] &&
-        simulationDatasetId === resourceRequestMap[name].simulationDatasetId &&
-        resourceRequestMap[name].unsubscribe
-      ) {
+    Object.entries(desired).forEach(([key, request]) => {
+      if (resourceRequestMap[key]?.unsubscribe) {
         return;
       }
-
-      const isExternal = !$resourceTypes.find(type => type.name === name);
-      // External datasets are matched by the simulation_dataset *id* (what
-      // plan_dataset.simulation_dataset_id references), whereas internal
-      // profiles are fetched by dataset_id. These are distinct id spaces;
-      // passing dataset_id to the external factory makes its sim-tied
-      // plan_dataset row preference silently never match.
-      const subscription = isExternal
-        ? createExternalResourceSubscription(simulationDataset.id, name, plan.start_time, user)
-        : createProfileSubscription(simulationDatasetId, name, simProfileStartYmd, user);
-      const type: 'external' | 'internal' = isExternal ? 'external' : 'internal';
+      const subscription = request.create();
       // subscription.store.subscribe() runs its callback immediately,
       // before it returns. That callback creates an unsubscribe function
       // that references this variable — so it must already exist.
@@ -271,13 +319,16 @@
       storeUnsubscribe = subscription.store.subscribe(({ error, loading, resource }) => {
         resourceRequestMap = {
           ...resourceRequestMap,
-          [name]: {
-            ...resourceRequestMap[name],
+          [key]: {
+            ...resourceRequestMap[key],
             error,
             loading,
-            resource,
-            simulationDatasetId,
-            type,
+            // Resources loaded for a source-bound layer carry that source, so layers, legends and axes
+            // can tell "/battery/soc" from one source apart from the same name in another.
+            resource: resource && request.sourceId ? { ...resource, sourceId: request.sourceId } : resource,
+            revisionKey: request.revisionKey,
+            type: request.type,
+            unavailable: request.unavailable,
             unsubscribe: () => {
               storeUnsubscribe?.();
               subscription.unsubscribe();
@@ -286,11 +337,6 @@
         };
       });
     });
-  } else if (simulationDataset === null) {
-    Object.values(resourceRequestMap).forEach(value => {
-      value.unsubscribe?.();
-    });
-    resourceRequestMap = {};
   }
 
   onDestroy(() => {
@@ -309,6 +355,21 @@
   $: rowClasses = classNames('row', { 'row-collapsed': !expanded });
   $: discreteOptions = discreteOptions || { ...ViewDefaultDiscreteOptions };
   $: activityLayers = layers.filter(isActivityLayer);
+  // Only the Plan provides activities (directives and simulated spans) today. An activity layer bound to any
+  // other source shows that source as unavailable instead of silently reading the Plan's activities.
+  $: planActivityLayers = activityLayers.filter(layer => resolveActivityLayerSourceId(layer) === PLAN_SOURCE_ID);
+  $: activitySourceErrors = [
+    ...new Set(
+      activityLayers
+        .filter(layer => resolveActivityLayerSourceId(layer) !== PLAN_SOURCE_ID)
+        .map(layer => {
+          const source = getSource($timelineSources, layer.sourceId);
+          return source
+            ? `Source "${source.label}" has no activities`
+            : `Source "${layer.sourceId}" is not available in this plan`;
+        }),
+    ),
+  ];
   $: externalEventLayers = layers.filter(isExternalEventLayer);
   $: lineLayers = layers.filter(layer => isLineLayer(layer) || (isXRangeLayer(layer) && layer.showAsLinePlot));
   $: xRangeLayers = layers.filter(layer => isXRangeLayer(layer) && !layer.showAsLinePlot);
@@ -339,11 +400,14 @@
     const newLoadedResources: Resource[] = [];
     const newLoadingErrors: string[] = [];
     let anyLoading = false;
+    const newSourceErrors: string[] = [];
     Object.values(resourceRequestMap).forEach(resourceRequest => {
       if (resourceRequest.resource) {
         newLoadedResources.push(resourceRequest.resource);
       }
-      if (resourceRequest.error) {
+      if (resourceRequest.unavailable) {
+        newSourceErrors.push(resourceRequest.error);
+      } else if (resourceRequest.error) {
         newLoadingErrors.push(resourceRequest.error);
       }
       if (resourceRequest.loading) {
@@ -352,6 +416,7 @@
     });
     loadedResources = newLoadedResources;
     resourceLoadingErrors = newLoadingErrors;
+    resourceSourceErrors = [...new Set(newSourceErrors)];
     // Use per-request loading flag, not loaded+errored vs total: a request
     // with both data and an error would be double-counted and stick true.
     anyResourcesLoading = anyLoading;
@@ -410,7 +475,7 @@
         // if more than one layer matches a type
         let seenDirectiveIds: Record<number, boolean> = {};
         let seenSpanIds: Record<number, boolean> = {};
-        activityLayers.forEach(layer => {
+        planActivityLayers.forEach(layer => {
           if (layer.filter) {
             const { directives: matchingDirectives, spans: matchingSpans } = applyActivityLayerFilter(
               layer.filter.activity,
@@ -701,11 +766,17 @@
         const items = (json.items as TimelineItemType[]) ?? '';
         const metadata = (json.metadata as TimelineItemMetadata) ?? {};
 
+        // Items from the Sources browser are data to show, not types to create: add them as a layer instead.
+        if (metadata.sourceId !== undefined) {
+          onTimelineItemsDrop(id, type, items, metadata);
+          return;
+        }
+
         // Only allow creating an activity if we have an actual activity in the drag data.
         if (type === 'activity' && items && plan) {
           // Determine if the row will visualize all requested activities
           let typesInRow = new Set();
-          activityLayers.forEach(layer => {
+          planActivityLayers.forEach(layer => {
             const matchingTypes = getMatchingTypesForActivityLayerFilter(
               layer.filter.activity,
               $planModelActivityTypes,
@@ -739,7 +810,7 @@
                   type,
                   metadata,
                   id,
-                  activityLayers.length ? activityLayers[0] : undefined,
+                  planActivityLayers.length ? planActivityLayers[0] : undefined,
                   index,
                 );
               }
@@ -810,8 +881,9 @@
       return [];
     }
     const resources: Resource[] = [];
-    if (layer.filter.resource) {
-      const resourceRequest = resourceRequestMap[layer.filter.resource];
+    const key = getLayerResourceRequestKey(layer);
+    if (key) {
+      const resourceRequest = resourceRequestMap[key];
       if (resourceRequest && !resourceRequest.loading && !resourceRequest.error && resourceRequest.resource) {
         resources.push(resourceRequest.resource);
       }
@@ -834,8 +906,9 @@
     // Note: skipping resource layer assignment since only one resource
     // can be assigned to a layer
     if (type === 'activity') {
-      // adding an activity
-      layer = activityLayers[0];
+      // adding an activity: extend an activity layer that reads from the same source
+      const sourceId = metadata?.sourceId ?? PLAN_SOURCE_ID;
+      layer = activityLayers.find(activityLayer => resolveActivityLayerSourceId(activityLayer) === sourceId);
     } else if (type === 'externalEvent' && items.length) {
       // adding an external event
       layer = externalEventLayers[0];
@@ -943,6 +1016,12 @@
         <div class="layer-message st-typography-label">No layers added to this row</div>
       {/if}
       <!-- Resource error indicator -->
+      {#each activitySourceErrors as sourceError}
+        <div class="layer-message error st-typography-label">{sourceError}</div>
+      {/each}
+      {#each hasResourceLayer ? resourceSourceErrors : [] as sourceError}
+        <div class="layer-message error st-typography-label">{sourceError}</div>
+      {/each}
       {#if hasResourceLayer && resourceLoadingErrors.length}
         <div class="layer-message error st-typography-label">
           Failed to load profiles for {resourceLoadingErrors.length} layer{pluralize(resourceLoadingErrors.length)}

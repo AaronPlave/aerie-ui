@@ -34,21 +34,28 @@ type ProfileMetadata = {
  * `simDatasetId` is the current simulation's dataset id (or -1 for plan-
  * level). It's used to pick *which* plan_dataset row owns this name when
  * multiple rows define it — preferring the row tied to the active sim, then
- * the plan-level (null) row.
+ * the plan-level (null) row. This is the legacy merged-namespace lookup.
+ *
+ * With `datasetId`, the lookup is instead restricted to that one plan_dataset
+ * row: the resource is "this name in this external dataset", and the same
+ * name in other datasets or in the simulation never satisfies it.
  */
 export function createExternalResourceSubscription(
   simDatasetId: number,
   name: string,
   planStartTimeYmd: string,
   user: User | null,
+  datasetId?: number,
 ): ExternalResourceSubscription {
   const initialState: TimelineResourceState = { error: '', loading: true, resource: null };
-  acquireTimelineResource(simDatasetId, name, 'external');
-  setTimelineResourceState(simDatasetId, name, 'external', initialState);
+  const statusId = datasetId ?? simDatasetId;
+  const statusKind = datasetId === undefined ? 'external' : 'externalDataset';
+  acquireTimelineResource(statusId, name, statusKind);
+  setTimelineResourceState(statusId, name, statusKind, initialState);
   const state = writable<TimelineResourceState>(initialState);
   function setState(next: TimelineResourceState) {
     state.set(next);
-    setTimelineResourceState(simDatasetId, name, 'external', next);
+    setTimelineResourceState(statusId, name, statusKind, next);
   }
 
   const accumulator: ProfileSegment[] = [];
@@ -87,6 +94,9 @@ export function createExternalResourceSubscription(
       let planLevel: Candidate | null = null;
       let fallback: Candidate | null = null;
       for (const pd of $planDatasets) {
+        if (datasetId !== undefined && pd.dataset_id !== datasetId) {
+          continue;
+        }
         const profile = pd.dataset.profiles.find(p => p.name === name);
         if (!profile) {
           continue;
@@ -221,7 +231,10 @@ export function createExternalResourceSubscription(
           currentMeta = null;
           lastMeta = null;
           resetForNewProfile();
-          lastError = 'Resource not found in attached external datasets';
+          lastError =
+            datasetId === undefined
+              ? 'Resource not found in attached external datasets'
+              : `Resource not found in external dataset ${datasetId}`;
           catchError('log', `Unable to load resource "${name}"`, new Error(lastError));
           emit();
         });
@@ -262,7 +275,7 @@ export function createExternalResourceSubscription(
         return;
       }
       disposed = true;
-      releaseTimelineResource(simDatasetId, name, 'external');
+      releaseTimelineResource(statusId, name, statusKind);
       abortController.abort();
       unsubscribers.forEach(unsub => unsub());
     },

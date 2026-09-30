@@ -7,14 +7,16 @@
   import DirectiveIcon from '../../assets/timeline-directive.svg?raw';
   import SpanIcon from '../../assets/timeline-span.svg?raw';
   import { plugins } from '../../stores/plugins';
+  import { timelineSources } from '../../stores/timelineSources';
   import type { ActivityDirective } from '../../types/activity';
   import type { ConstraintResultWithName } from '../../types/constraint';
   import type { ExternalEvent } from '../../types/external-event';
   import type { ResourceType, Span } from '../../types/simulation';
-  import type { LineLayer, LinePoint, MouseOver, Point, Row, XRangePoint } from '../../types/timeline';
+  import type { Layer, LineLayer, LinePoint, MouseOver, Point, Row, XRangePoint } from '../../types/timeline';
   import { addPageFocusListener } from '../../utilities/browser';
   import { convertUsToDurationString, formatDate, getDoyTime } from '../../utilities/time';
   import { getResourceForLayer } from '../../utilities/timeline';
+  import { getSource } from '../../utilities/timelineSources';
 
   export let interpolateHoverValue: boolean = false;
   export let hidden: boolean = false;
@@ -449,6 +451,19 @@
     `;
   }
 
+  function textForLayerSource(layer: Layer | null | undefined): string {
+    if (!layer?.sourceId) {
+      return '';
+    }
+    const source = getSource($timelineSources, layer.sourceId);
+    const label = source ? `${source.group} · ${source.label}` : `${layer.sourceId} (unavailable)`;
+    return `
+        <div class='tooltip-row'>
+          <span>Source:</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(label)}</span>
+        </div>`;
+  }
+
   function textForLinePoint(point: LinePoint, layerId: number): string {
     const { x, y } = point;
     const layer = row ? row.layers.find(l => l.id === layerId) : null;
@@ -458,7 +473,12 @@
     let formattedYValue = y;
     if (layer && layer.chartType === 'line') {
       name = layer.name ? layer.name : point.name;
-      const layerResource = getResourceForLayer(layer, resourceTypes);
+      // A source-bound layer's schema comes from its source's catalog; legacy layers use the model's types.
+      const layerResource = layer.sourceId
+        ? getSource($timelineSources, layer.sourceId)?.resources?.catalog.find(
+            type => type.name === layer.filter.resource,
+          )
+        : getResourceForLayer(layer, resourceTypes);
       if (layerResource) {
         // Only consider a single resource since multiple resources on a single layer is
         // supported in config but not valid
@@ -483,6 +503,7 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
+        ${textForLayerSource(layer)}
         <div class='tooltip-row'>
           <span>Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>
@@ -596,6 +617,7 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
+        ${textForLayerSource(layer)}
         <div class='tooltip-row'>
           <span>Start Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>

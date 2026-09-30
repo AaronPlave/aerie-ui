@@ -380,13 +380,36 @@
     viewUpdateRow('layers', newLayers);
   }
 
+  // Rebinding a layer to another source and updating its filter must be one update: two dispatches would each
+  // start from the same stale layer and the second would undo the first.
+  function handleUpdateLayerSource(sourceId: string | null, filter: Layer['filter'], layer: Layer) {
+    const newLayers = layers.map(l => {
+      if (layer.id === l.id) {
+        const { sourceId: _previous, ...rest } = layer; // eslint-disable-line @typescript-eslint/no-unused-vars
+        return sourceId ? { ...rest, filter, sourceId } : { ...rest, filter };
+      }
+      return l;
+    });
+    viewUpdateRow('layers', newLayers);
+  }
+
   function handleUpdateResourceLayerChartType(value: ChartType, layer: Layer) {
     const newLayers = layers.map(l => {
       if (layer.id === l.id) {
         if (isXRangeLayer(l) && value === 'line') {
-          return createTimelineLineLayer(timelines, yAxes, { filter: l.filter, id: l.id, name: l.name });
+          return createTimelineLineLayer(timelines, yAxes, {
+            filter: l.filter,
+            id: l.id,
+            name: l.name,
+            ...(l.sourceId ? { sourceId: l.sourceId } : {}),
+          });
         } else if (isLineLayer(l) && value === 'x-range') {
-          return createTimelineXRangeLayer(timelines, yAxes, { filter: l.filter, id: l.id, name: l.name });
+          return createTimelineXRangeLayer(timelines, yAxes, {
+            filter: l.filter,
+            id: l.id,
+            name: l.name,
+            ...(l.sourceId ? { sourceId: l.sourceId } : {}),
+          });
         }
       }
       return l;
@@ -1096,6 +1119,7 @@
                 on:duplicate={() => handleDuplicateLayer(layer)}
                 on:filterChange={({ detail: { filter } }) =>
                   handleUpdateLayerProperty('filter', { activity: filter }, layer)}
+                on:sourceChange={({ detail: { sourceId } }) => handleUpdateLayerSource(sourceId, layer.filter, layer)}
               />
             {/each}
           </div>
@@ -1122,6 +1146,8 @@
                 on:duplicate={() => handleDuplicateLayer(layer)}
                 on:filterChange={({ detail: { filter } }) =>
                   handleUpdateLayerProperty('filter', { resource: filter }, layer)}
+                on:sourceChange={({ detail: { filter, sourceId } }) =>
+                  handleUpdateLayerSource(sourceId, { resource: filter ?? '' }, layer)}
               />
               <!-- <TimelineEditorLayerSection
                 on:handleUpdateResourceLayerChartType={event => handleUpdateResourceLayerChartType(event.detail.value, layer)}
