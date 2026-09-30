@@ -806,7 +806,6 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   GET_SEQUENCE_ADAPTATION: () => true,
   GET_SIMULATION_DATASET_ID: () => true,
   GET_SPANS: () => true,
-  GET_STANDALONE_DATASET: () => true, // SPIKE
   GET_TYPESCRIPT_CONSTRAINTS: () => true,
   GET_TYPESCRIPT_SCHEDULING: () => true,
   GET_UPLOADED_FILENAME: () => true,

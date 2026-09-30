@@ -205,7 +205,6 @@ export enum Queries {
   SIMULATION_DATASETS = 'simulation_dataset',
   SIMULATION_TEMPLATES = 'simulation_template',
   SPANS = 'span',
-  STANDALONE_DATASET = 'standalone_dataset_by_pk', // SPIKE
   TAGS = 'tags',
   TOPIC = 'topic',
   UPDATE_ACTION_DEFINITION = 'update_action_definition_by_pk',

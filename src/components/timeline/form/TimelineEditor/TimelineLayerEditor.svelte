@@ -6,18 +6,13 @@
   import DuplicateIcon from '@nasa-jpl/stellar/icons/duplicate.svg?component';
   import FilterIcon from '@nasa-jpl/stellar/icons/filter.svg?component';
   import { createEventDispatcher } from 'svelte';
-  import { readable } from 'svelte/store';
   import TimelineLineLayerIcon from '../../../../assets/timeline-line-layer.svg?component';
   import TimelineXRangeLayerIcon from '../../../../assets/timeline-x-range-layer.svg?component';
   import { ViewDiscreteLayerColorPresets, ViewLineLayerColorPresets } from '../../../../constants/view';
-  import { externalResourceNames, resourceTypes as modelResourceTypes } from '../../../../stores/simulation';
-  import { getTimelineSourceCatalog } from '../../../../stores/timelineSourceCatalog';
-  import type { SelectedDropdownOptionValue } from '../../../../types/dropdown';
+  import { externalResourceNames, resourceTypes } from '../../../../stores/simulation';
   import type { RadioButtonId } from '../../../../types/radio-buttons';
-  import type { TimelineSourceRegistry } from '../../../../types/timelineSource';
   import type {
     ActivityLayer,
-    ActivityLayerFilter,
     Axis,
     ChartType,
     ExternalEventLayer,
@@ -26,15 +21,6 @@
     ResourceLayerFilter,
   } from '../../../../types/timeline';
   import { isActivityLayer, isExternalEventLayer, isLineLayer, isXRangeLayer } from '../../../../utilities/timeline';
-  import {
-    getResourceFilterName,
-    getSource,
-    isDefaultSource,
-    resolveActivityLayerSourceId,
-    resolveResourceRef,
-    toActivityLayerSourceId,
-    toResourceLayerFilter,
-  } from '../../../../utilities/timelineSources';
   import { tooltip } from '../../../../utilities/tooltip';
   import ColorPresetsPicker from '../../../form/ColorPresetsPicker.svelte';
   import ColorSchemePicker from '../../../form/ColorSchemePicker.svelte';
@@ -45,14 +31,6 @@
   import ActivityFilterBuilder from './ActivityFilterBuilder.svelte';
   import ExternalEventFilterBuilder from './ExternalEventFilterBuilder.svelte';
 
-  // SPIKE: a non-plan page can supply its own resource catalog; the plan page falls back to the model's.
-  const catalog = getTimelineSourceCatalog();
-  const resourceTypes = catalog.resourceTypes ?? modelResourceTypes;
-  // SPIKE 2: with a source registry, a resource layer is edited as (source, resource).
-  const catalogSources = catalog.sources ?? readable<TimelineSourceRegistry | null>(null);
-
-  const emptySpanUtilityMaps = { directiveIdToSpanIdMap: {}, spanIdToChildIdsMap: {}, spanIdToDirectiveIdMap: {} };
-
   export let layer: Layer;
   export let yAxes: Axis[] = [];
 
@@ -62,11 +40,8 @@
   let externalEventFilterMenu: ExternalEventFilterBuilder;
   let isColorScheme: boolean = false;
   let name: string = '';
-  let pickedSourceId: string | null = null;
-  let pickedForLayerId: number | null = null;
 
   const dispatch = createEventDispatcher<{
-    activitySourceChange: { filter: ActivityLayerFilter | undefined; sourceId: string | undefined };
     colorChange: { color: string };
     duplicate: void;
     filterChange: { filter: ResourceLayerFilter | ExternalEventLayerFilter };
@@ -97,105 +72,18 @@
 
   $: name = getLayerName(layer);
 
-  $: registry = $catalogSources;
-  $: defaultSourceId = registry?.defaultSourceId ?? null;
-  $: resourceRef = resolveResourceRef(layer.filter.resource, defaultSourceId);
-  $: if (pickedForLayerId !== layer.id) {
-    // A different layer is being edited: forget the source picked for the previous one.
-    pickedForLayerId = layer.id;
-    pickedSourceId = null;
-  }
-  $: selectedSourceId = pickedSourceId ?? resourceRef?.sourceId ?? defaultSourceId;
-  $: sourceOptions = getSourceOptions(registry, selectedSourceId);
-  $: resourceNames = registry
-    ? (registry.sources.find(source => source.id === selectedSourceId)?.resourceTypes ?? [])
-        .map(type => type.name)
-        .sort()
-    : $resourceTypes
-        .map(type => type.name)
-        .concat($externalResourceNames)
-        .sort();
-
-  function getSourceOptions(registry: TimelineSourceRegistry | null, selectedSourceId: string | null) {
-    const options = (registry?.sources ?? []).map(source => ({ label: source.label, value: source.id }));
-    if (selectedSourceId && !options.find(option => option.value === selectedSourceId)) {
-      // The layer points at a source this page does not have; keep it visible rather than rebinding.
-      options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
-    }
-    return options;
-  }
-
-  // SPIKE 3: activity layers bind to a source at the layer level; the filter itself is unchanged.
-  $: activitySourceId = isActivityLayer(layer) ? resolveActivityLayerSourceId(layer, defaultSourceId) : null;
-  $: activitySourceOptions = getActivitySourceOptions(registry, activitySourceId);
-  $: activitySource = getSource(registry, activitySourceId);
-  // null = use the plan/global stores exactly as before; otherwise the source's own catalog.
-  $: activitySourceCatalog =
-    registry && !isDefaultSource(activitySourceId, defaultSourceId)
-      ? (activitySource?.intervals ?? { intervalTypes: [], spanUtilityMaps: emptySpanUtilityMaps, spans: [] })
-      : null;
-
-  function getActivitySourceOptions(registry: TimelineSourceRegistry | null, selectedSourceId: string | null) {
-    const options = (registry?.sources ?? [])
-      .filter(source => source.hasDirectives || source.intervals !== undefined)
-      .map(source => ({ label: source.label, value: source.id }));
-    if (selectedSourceId && !options.find(option => option.value === selectedSourceId)) {
-      options.push({ label: `${selectedSourceId} (unavailable)`, value: selectedSourceId });
-    }
-    return options;
-  }
-
-  function onActivitySourceChange(event: Event) {
-    if (!isActivityLayer(layer)) {
-      return;
-    }
-    const sourceId = (event.currentTarget as HTMLSelectElement).value;
-    const newSource = getSource(registry, sourceId);
-    const typeNames = new Set((newSource?.intervals?.intervalTypes ?? []).map(type => type.name));
-    // Type selections only mean something within one source's catalog: drop those the new source does
-    // not declare instead of silently carrying them over. Rule-based filters (dynamic/other) are kept.
-    // Exception: if that would drop *every* selected type, keep them. The filter model has no "match
-    // nothing", and an emptied static_types means "all types", which would silently widen the layer.
-    const filter = layer.filter.activity;
-    const keptTypes = (filter?.static_types ?? []).filter(type => typeNames.has(type));
-    const prunedFilter: ActivityLayerFilter | undefined = filter
-      ? {
-          ...filter,
-          static_types: keptTypes.length || !filter.static_types?.length ? keptTypes : filter.static_types,
-          type_subfilters: Object.fromEntries(
-            Object.entries(filter.type_subfilters ?? {}).filter(([type]) => typeNames.has(type)),
-          ),
-        }
-      : filter;
-    dispatch('activitySourceChange', {
-      filter: prunedFilter,
-      sourceId: toActivityLayerSourceId(sourceId, defaultSourceId),
-    });
-  }
-
-  function onSourceChange(event: Event) {
-    const sourceId = (event.currentTarget as HTMLSelectElement).value;
-    pickedSourceId = sourceId;
-    const currentName = resourceRef?.name ?? '';
-    const newSource = registry?.sources.find(source => source.id === sourceId);
-    const keepName = !!newSource?.resourceTypes.find(type => type.name === currentName);
-    dispatch('filterChange', { filter: toResourceLayerFilter(keepName ? currentName : '', sourceId, defaultSourceId) });
-  }
-
-  function onResourceChange(values: SelectedDropdownOptionValue[]) {
-    const resourceName = values.length && values[0] !== null ? `${values[0]}` : '';
-    dispatch('filterChange', {
-      filter: registry ? toResourceLayerFilter(resourceName, selectedSourceId, defaultSourceId) : resourceName,
-    });
-  }
+  $: resourceNames = $resourceTypes
+    .map(type => type.name)
+    .concat($externalResourceNames)
+    .sort();
 
   function getLayerName(layer: Layer) {
     if (isActivityLayer(layer)) {
       name = layer.name;
     } else if (isLineLayer(layer)) {
-      name = layer.name || getResourceFilterName(layer.filter.resource) || 'Line Layer';
+      name = layer.name || layer.filter.resource || 'Line Layer';
     } else if (isXRangeLayer(layer)) {
-      name = layer.name || getResourceFilterName(layer.filter.resource) || 'X-Range Layer';
+      name = layer.name || layer.filter.resource || 'X-Range Layer';
     } else if (isExternalEventLayer(layer)) {
       name = layer.name || 'Events Layer';
     }
@@ -254,23 +142,8 @@
     </div>
     {#if isActivityLayer(layer)}
       {@const filterCount = getActivityLayerFilterCount(layer)}
-      {#if activitySourceOptions.length > 1}
-        <!-- SPIKE 3: the layer's source slot; the filter builder then works against that source's catalog. -->
-        <select
-          aria-label="Activity source"
-          class="st-select layer-source"
-          value={activitySourceId}
-          on:change={onActivitySourceChange}
-          use:tooltip={{ content: 'Source', placement: 'top' }}
-        >
-          {#each activitySourceOptions as option}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      {/if}
       <ActivityFilterBuilder
         layerName={layer.name}
-        sourceCatalog={activitySourceCatalog}
         filter={layer.filter.activity}
         on:filterChange
         on:rename={({ detail: { name: newName } }) => dispatch('updateLayer', { property: 'name', value: newName })}
@@ -301,31 +174,17 @@
         </button>
       </ActivityFilterBuilder>
     {:else if isLineLayer(layer) || isXRangeLayer(layer)}
-      {#if sourceOptions.length > 1}
-        <!-- SPIKE 2: explicit source control; only shown when the timeline has more than one source. -->
-        <select
-          aria-label="Resource source"
-          class="st-select layer-source"
-          value={selectedSourceId}
-          on:change={onSourceChange}
-          use:tooltip={{ content: 'Source', placement: 'top' }}
-        >
-          {#each sourceOptions as option}
-            <option value={option.value}>{option.label}</option>
-          {/each}
-        </select>
-      {/if}
       <SearchableDropdown
         maxListHeight="400px"
         selectedOptionLabel={layer.name}
-        selectTooltip={resourceRef?.name || 'Select Resource'}
+        selectTooltip={layer.filter.resource || 'Select Resource'}
         showPlaceholderOption={false}
         className="w-full"
         placeholder="Select Resource"
         searchPlaceholder="Filter resources"
-        selectedOptionValues={resourceRef?.name ? [resourceRef.name] : []}
+        selectedOptionValues={layer.filter.resource ? [layer.filter.resource] : []}
         options={resourceNames.map(resourceName => ({ display: resourceName, value: resourceName }))}
-        on:change={({ detail: values }) => onResourceChange(values)}
+        on:change={({ detail: values }) => dispatch('filterChange', { filter: values.length ? values[0] : '' })}
       >
         <ChevronDownIcon slot="icon" />
       </SearchableDropdown>
@@ -422,10 +281,6 @@
 
   .left {
     flex: 1;
-  }
-
-  .layer-source {
-    max-width: 45%;
   }
 
   .actions {

@@ -13,11 +13,9 @@
   import type { ExternalEvent, ExternalEventId } from '../../types/external-event';
   import type { Span } from '../../types/simulation';
   import type { DiscreteOptions, DiscreteTree, DiscreteTreeNode, MouseDown, MouseOver } from '../../types/timeline';
-  import type { SpanKey } from '../../types/timelineSource';
   import { getExternalEventWholeRowId } from '../../utilities/externalEvents';
   import { classNames } from '../../utilities/generic';
   import { pluralize } from '../../utilities/text';
-  import { getSpanKey, getSpanKeyForSpan } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import Collapse from '../Collapse.svelte';
 
@@ -25,15 +23,6 @@
   export let discreteTree: DiscreteTree = [];
   export let selectedActivityDirectiveId: number | null = null;
   export let selectedSpanId: number | null = null;
-  /** SPIKE 3: compare (source, span_id), not span_id; undefined falls back to a default-source id. */
-  export let selectedSpanKey: SpanKey | null | undefined = undefined;
-
-  $: effectiveSelectedSpanKey =
-    selectedSpanKey !== undefined
-      ? selectedSpanKey
-      : selectedSpanId !== null
-        ? getSpanKey({ sourceId: null, spanId: selectedSpanId })
-        : null;
   export let selectedExternalEventId: ExternalEventId | null = null;
 
   let rowHeight = 0;
@@ -113,8 +102,7 @@
         <button
           style:height={`${rowHeight}px`}
           class="row-header-discrete-group leaf st-button tertiary"
-          class:selected={directive?.id === selectedActivityDirectiveId ||
-            (!!span && getSpanKeyForSpan(span) === effectiveSelectedSpanKey)}
+          class:selected={directive?.id === selectedActivityDirectiveId || span?.span_id === selectedSpanId}
           on:dblclick={event => onDblClickLeaf(event)}
           on:click={event => onMouseDownLeaf(event, node)}
         >
@@ -218,7 +206,6 @@
             discreteTree={node.children}
             {selectedActivityDirectiveId}
             {selectedSpanId}
-            {selectedSpanKey}
             {selectedExternalEventId}
             on:discrete-tree-node-change
             on:mouseDown
@@ -267,7 +254,6 @@
             discreteTree={node.children}
             {selectedActivityDirectiveId}
             {selectedSpanId}
-            {selectedSpanKey}
             {selectedExternalEventId}
             on:discrete-tree-node-change
             on:mouseDown

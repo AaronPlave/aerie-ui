@@ -47,11 +47,6 @@ export function sampleProfiles(
             x: start + nextSegmentOffset,
             y: dynamics,
           });
-        } else if (type === 'real' && dynamics == null) {
-          // A gap, as Merlin writes it: is_gap = true with null dynamics. There is no {initial, rate}
-          // to evaluate; a null y is what LayerLine already treats as "no value".
-          values.push({ is_gap, x: start + segmentOffset, y: null });
-          values.push({ is_gap, x: start + nextSegmentOffset, y: null });
         } else if (type === 'real') {
           values.push({
             is_gap,

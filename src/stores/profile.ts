@@ -41,7 +41,7 @@ export function createProfileSubscription(
   user: User | null,
 ): ProfileSubscription {
   const initialState: ProfileSubscriptionState = { error: '', loading: true, resource: null };
-  acquireTimelineResource(datasetId, name, 'sim');
+  acquireTimelineResource(datasetId, name);
   setTimelineResourceState(datasetId, name, 'sim', initialState);
   const state = writable<ProfileSubscriptionState>(initialState);
   function setState(next: ProfileSubscriptionState) {
@@ -204,7 +204,7 @@ export function createProfileSubscription(
       }
       disposed = true;
       logFinalAggregate();
-      releaseTimelineResource(datasetId, name, 'sim');
+      releaseTimelineResource(datasetId, name);
       abortController.abort();
       unsubscribers.forEach(unsub => unsub());
     },

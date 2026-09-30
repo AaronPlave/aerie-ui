@@ -41,25 +41,21 @@ export type ProfileSegment = {
 export type Resource = {
   name: string;
   schema: ValueSchema;
-  /** SPIKE 2: source the resource was loaded from. Absent means the timeline's default source. */
-  sourceId?: string;
   values: ResourceValue[];
 };
 
 export type ResourceRequest = {
   error: string;
   loading: boolean;
-  /** TimelineResourceProvider.key the resource was requested from. */
-  providerKey: string;
   resource: Resource | null;
+  simulationDatasetId: number;
+  type: 'internal' | 'external';
   unsubscribe?: () => void;
 };
 
 export type ResourceType = {
   name: string;
   schema: ValueSchema;
-  /** SPIKE 2: catalog source of this type. Absent means the timeline's default source. */
-  sourceId?: string;
 };
 
 export type ResourceValue = {
@@ -187,11 +183,6 @@ export type SpanDB = {
 export type Span = SpanDB & {
   durationMs: number;
   endMs: number;
-  /**
-   * SPIKE 3: which timeline source this span came from. Absent means the timeline's default source.
-   * `span_id`/`parent_id` are only unique within one source, so identity is (sourceId, span_id).
-   */
-  sourceId?: string;
   startMs: number;
 };
 

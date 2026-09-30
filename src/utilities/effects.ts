@@ -219,7 +219,6 @@ import type {
   SpanUtilityMaps,
   Topic,
 } from '../types/simulation';
-import type { StandaloneDataset } from '../types/timelineSource';
 import type {
   ActivityDirectiveTagsInsertInput,
   ConstraintDefinitionTagsInsertInput,
@@ -5195,31 +5194,6 @@ const effects = {
     } catch (e) {
       catchError('log', 'Unable to retrieve spans', e as Error);
       return [];
-    }
-  },
-
-  // SPIKE: load a plan-independent dataset and derive its resource catalog from profile schemas.
-  async getStandaloneDataset(
-    id: number,
-    user: User | null,
-  ): Promise<{ resourceTypes: ResourceType[]; standaloneDataset: StandaloneDataset } | null> {
-    try {
-      const data = await reqHasura<StandaloneDataset & { dataset: { profiles: Pick<Profile, 'name' | 'type'>[] } }>(
-        gql.GET_STANDALONE_DATASET,
-        { id },
-        user,
-      );
-      const { standaloneDataset } = data;
-      if (standaloneDataset == null) {
-        return null;
-      }
-      const { dataset, ...rest } = standaloneDataset;
-      // The resource catalog comes straight from profile.type.schema; no mission model is consulted.
-      const resourceTypes: ResourceType[] = dataset.profiles.map(({ name, type }) => ({ name, schema: type.schema }));
-      return { resourceTypes, standaloneDataset: rest };
-    } catch (e) {
-      catchError('log', `Unable to retrieve standalone dataset ${id}`, e as Error);
-      return null;
     }
   },
 

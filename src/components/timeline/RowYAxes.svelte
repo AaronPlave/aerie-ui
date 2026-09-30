@@ -13,7 +13,6 @@
   export let drawHeight: number = 0;
   export let drawWidth: number = 0;
   export let resources: Resource[];
-  export let defaultSourceId: string | null = null;
   export let layers: Layer[] = [];
   export let yAxes: Axis[] = [];
 
@@ -46,7 +45,7 @@
       let i = 0;
 
       for (const layer of xRangeLayers) {
-        const layerResource = getResourceForLayer(layer, resources, defaultSourceId) as Resource;
+        const layerResource = getResourceForLayer(layer, resources) as Resource;
         const xRangeAxisG = gSelection.append('g').attr('class', axisClass);
         xRangeAxisG.selectAll('*').remove();
 
@@ -104,7 +103,7 @@
 
         // Detect if this axis contains only duration resources
         const allResourcesAreDuration = !yAxisLayers.find(layer => {
-          const resource = getResourceForLayer(layer, resources, defaultSourceId);
+          const resource = getResourceForLayer(layer, resources);
           if (!resource || resource.schema.type !== 'duration') {
             return true;
           }

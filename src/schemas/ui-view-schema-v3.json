@@ -174,25 +174,9 @@
       "additionalProperties": false,
       "properties": {
         "resource": {
-          "description": "Resource to display in this layer. A string names a resource in the timeline's default source (the plan simulation); an object names a resource in a specific source (SPIKE 2).",
-          "oneOf": [
-            {
-              "type": "string"
-            },
-            {
-              "additionalProperties": false,
-              "properties": {
-                "name": {
-                  "type": "string"
-                },
-                "sourceId": {
-                  "type": "string"
-                }
-              },
-              "required": ["name", "sourceId"],
-              "type": "object"
-            }
-          ]
+          "additionalProperties": false,
+          "description": "Resource to display in this layer",
+          "type": "string"
         }
       },
       "type": "object"
@@ -513,10 +497,6 @@
                               },
                               "name": {
                                 "description": "Name of the layer",
-                                "type": "string"
-                              },
-                              "sourceId": {
-                                "description": "SPIKE 3: source slot the activity filter selects from; absent = the default (plan) source",
                                 "type": "string"
                               },
                               "yAxisId": {

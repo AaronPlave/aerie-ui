@@ -14,15 +14,12 @@
   import type { LineLayer, LinePoint, MouseOver, Point, Row, XRangePoint } from '../../types/timeline';
   import { addPageFocusListener } from '../../utilities/browser';
   import { convertUsToDurationString, formatDate, getDoyTime } from '../../utilities/time';
-  import type { TimelineSourceRegistry } from '../../types/timelineSource';
   import { getResourceForLayer } from '../../utilities/timeline';
-  import { getSource, getSourceLabel, getSpanParent, resolveResourceRef } from '../../utilities/timelineSources';
 
   export let interpolateHoverValue: boolean = false;
   export let hidden: boolean = false;
   export let mouseOver: MouseOver | null;
   export let resourceTypes: ResourceType[] = [];
-  export let timelineSources: TimelineSourceRegistry | null = null;
 
   let activityDirectives: ActivityDirective[] = [];
   let externalEvents: ExternalEvent[] = [];
@@ -452,24 +449,6 @@
     `;
   }
 
-  // SPIKE 2: with more than one source, name the source so identical resource names are distinguishable.
-  function textForSource(layer: Row['layers'][number] | null | undefined): string {
-    if (!layer || !timelineSources || timelineSources.sources.length < 2) {
-      return '';
-    }
-    const ref = resolveResourceRef(layer.filter.resource, timelineSources.defaultSourceId);
-    if (!ref) {
-      return '';
-    }
-    return `
-        <div class='tooltip-row'>
-          <span>Source:</span>
-          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(
-            getSourceLabel(timelineSources, ref.sourceId),
-          )}</span>
-        </div>`;
-  }
-
   function textForLinePoint(point: LinePoint, layerId: number): string {
     const { x, y } = point;
     const layer = row ? row.layers.find(l => l.id === layerId) : null;
@@ -479,7 +458,7 @@
     let formattedYValue = y;
     if (layer && layer.chartType === 'line') {
       name = layer.name ? layer.name : point.name;
-      const layerResource = getResourceForLayer(layer, resourceTypes, timelineSources?.defaultSourceId);
+      const layerResource = getResourceForLayer(layer, resourceTypes);
       if (layerResource) {
         // Only consider a single resource since multiple resources on a single layer is
         // supported in config but not valid
@@ -504,7 +483,6 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
-        ${textForSource(layer)}
         <div class='tooltip-row'>
           <span>Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>
@@ -536,38 +514,13 @@
     `;
   }
 
-  // SPIKE 3: which source a span came from, and its parent resolved within that same source.
-  function textForSpanSource(span: Span): string {
-    const rows: string[] = [];
-    if (timelineSources && timelineSources.sources.length > 1) {
-      const sourceId = span.sourceId ?? timelineSources.defaultSourceId;
-      rows.push(`<div class='tooltip-row'>
-          <span>Source:</span>
-          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(getSourceLabel(timelineSources, sourceId))}</span>
-        </div>`);
-    }
-    if (span.parent_id !== null) {
-      const parent = getSpanParent(span, timelineSources, getSource(timelineSources, null)?.intervals?.spansMap);
-      rows.push(`<div class='tooltip-row'>
-          <span>Parent:</span>
-          <span class='tooltip-value-highlight st-typography-medium'>${
-            parent ? `${escapeHtml(parent.type)} (${parent.span_id})` : `${span.parent_id} (not loaded)`
-          }</span>
-        </div>`);
-    }
-    return rows.join('');
-  }
-
   function textForSpan(span: Span): string {
     const { span_id, duration, startMs, endMs, type } = span;
     const spanStartTime = formatDate(new Date(startMs), $plugins.time.primary.format);
     const spanEndTime = formatDate(new Date(endMs), $plugins.time.primary.format);
     return `
       <div class='tooltip-row-container'>
-        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} ${
-          span.sourceId ? 'Imported Interval' : 'Simulated Activity (Span)'
-        }</div>
-        ${textForSpanSource(span)}
+        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} Simulated Activity (Span)</div>
         <div class='tooltip-row'>
           <span>Type:</span>
           <span class='tooltip-value-highlight st-typography-medium'>${type}</span>
@@ -643,7 +596,6 @@
             <span class='tooltip-value-highlight st-typography-medium'>${name}</span>
           </span>
         </div>
-        ${textForSource(layer)}
         <div class='tooltip-row'>
           <span>Start Time (${primaryTimeLabel}):</span>
           <span class='tooltip-value-highlight st-typography-medium'>

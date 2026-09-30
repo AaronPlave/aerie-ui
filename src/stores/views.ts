@@ -641,8 +641,8 @@ export function getUpdatedLayerWithFilters(
     } else {
       const { layer: newLayer, yAxis } = createTimelineResourceLayer(timelines, items[0] as ResourceType);
       if (newLayer && newLayer.filter.resource) {
-        // SPIKE 2: createTimelineResourceLayer already set a source-qualified filter from items[0];
-        // re-assigning itemNames[0] here would strip the source and rebind to the default source.
+        // Add remaining resources if requested (generally avoided since resource layers are usually created on separate layers)
+        newLayer.filter.resource = itemNames.length ? itemNames[0] : '';
         if (isLineLayer(newLayer)) {
           newLayer.lineColor = getUniqueColorForLineLayer(row);
         } else if (isXRangeLayer(newLayer)) {

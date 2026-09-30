@@ -18,7 +18,7 @@
   } from 'lucide-svelte';
   import type { PaneAPI } from 'paneforge';
   import { onDestroy } from 'svelte';
-  import { get, writable } from 'svelte/store';
+  import { get } from 'svelte/store';
   import ActivityDirectiveBuilder from '../../../components/activity/ActivityDirectiveBuilder.svelte';
   import Nav from '../../../components/app/Nav.svelte';
   import PageTitle from '../../../components/app/PageTitle.svelte';
@@ -162,12 +162,6 @@
   import { tooltip } from '../../../utilities/tooltip';
   import { getSearchParameterNumber, removeQueryParam, setQueryParam } from '../../../utilities/url';
   import { generateDefaultView } from '../../../utilities/view';
-  import { setTimelineSourceCatalog } from '../../../stores/timelineSourceCatalog';
-  import { createPlanTimelineSourceRegistry } from '../../../stores/timelineSources';
-  import type { TimelineSource } from '../../../types/timelineSource';
-  import { createStandaloneTimelineSource } from '../../../utilities/timelineResourceProviders';
-  import { getIntervalTypesFromSpans, inferIntervalTypeDescriptors } from '../../../utilities/standaloneDataset';
-  import { parseSourceBindings } from '../../../utilities/timelineSources';
   import type { PageData } from './$types';
 
   export let data: PageData;
@@ -177,48 +171,6 @@
   const defaultLogLevels: LogLevel[] = ['error', 'warn', 'info'];
 
   const user = getUserStore();
-
-  // SPIKE 2 (multi-source timelines): besides the plan's own simulation, attach independent
-  // standalone datasets. Temporary selection mechanism; deliberately not plan_dataset (which would also
-  // claim ownership of the merlin.dataset).
-  // SPIKE 3: `?source.<slot>=standalone:<id>` binds a view-level slot name (what layers store) to a
-  // concrete artifact; `?standaloneDataset=<id>` is the Spike 2 form (slot = "standalone:<id>").
-  const attachedTimelineSources = writable<TimelineSource[]>([]);
-  const sourceBindings = parseSourceBindings($page.url.searchParams);
-  attachedTimelineSources.set(
-    sourceBindings.map(binding => ({
-      id: binding.slot,
-      intervals: null,
-      label: `${binding.slot} (loading)`,
-      provider: null,
-      resourceTypes: [],
-      resourceTypesLoading: true,
-    })),
-  );
-  Promise.all(
-    sourceBindings.map(async binding => {
-      const result = await effects.getStandaloneDataset(binding.artifactId, get(user));
-      if (!result) {
-        return {
-          binding: `standalone_dataset ${binding.artifactId} (not found)`,
-          id: binding.slot,
-          label: `${binding.slot} (not found)`,
-          provider: null,
-          resourceTypes: [],
-        };
-      }
-      const { resourceTypes, standaloneDataset } = result;
-      // Eager, whole-dataset load; offsets resolve against the source's own start time.
-      const spans = await effects.getSpans(standaloneDataset.dataset_id, standaloneDataset.start_time, get(user));
-      const descriptors = binding.catalog === 'inferred' ? inferIntervalTypeDescriptors(spans) : [];
-      return createStandaloneTimelineSource(standaloneDataset, resourceTypes, get(user), true, {
-        intervalTypes: getIntervalTypesFromSpans(spans, descriptors),
-        sourceId: binding.slot,
-        spans,
-      });
-    }),
-  ).then(sources => attachedTimelineSources.set(sources));
-  setTimelineSourceCatalog({ sources: createPlanTimelineSourceRegistry(get(user), attachedTimelineSources) });
 
   let activityErrorCounts: ActivityErrorCounts = {
     all: 0,

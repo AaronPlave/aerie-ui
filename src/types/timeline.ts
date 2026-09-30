@@ -27,11 +27,6 @@ export type DiscreteTreeExpansionMap = Record<string, boolean>;
 
 export interface ActivityLayer extends Layer {
   activityColor: string;
-  /**
-   * SPIKE 3: the source slot whose intervals this layer's (unchanged) activity filter selects from.
-   * Absent means the timeline's default source (on the plan page: directives + simulated spans).
-   */
-  sourceId?: string;
 }
 export interface ExternalEventLayer extends Layer {
   externalEventColor: string;
@@ -170,8 +165,6 @@ export type MouseOver = {
   row?: Row;
   selectedActivityDirectiveId?: ActivityDirectiveId | undefined;
   selectedExternalEventId?: ExternalEventId | undefined;
-  /** SPIKE 3: the span itself (carries its sourceId). `selectedSpanId` is only set for default-source spans. */
-  selectedSpan?: Span;
   selectedSpanId?: SpanId;
   spans?: Span[];
 };
@@ -210,17 +203,7 @@ export type QuadtreeRect = {
   y: number;
 };
 
-/**
- * SPIKE 2 (multi-source timelines): a resource layer binds to a source-qualified reference.
- * A bare string is the legacy form and means "this name in the timeline's default source"
- * (the plan's simulation on the plan page), so existing views load unchanged.
- */
-export type ResourceLayerFilter = string | ResourceRef;
-
-export type ResourceRef = {
-  name: string;
-  sourceId: string;
-};
+export type ResourceLayerFilter = string;
 
 export type ActivityOptions = {
   // Whether or not to display only directives, only spans, or both in the row

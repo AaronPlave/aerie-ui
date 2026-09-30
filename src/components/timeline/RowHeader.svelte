@@ -20,9 +20,7 @@
     LineLayer,
     MouseOver,
   } from '../../types/timeline';
-  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import { getResourceForLayer } from '../../utilities/timeline';
-  import { getSourceLabel } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import DropTarget from './DropTarget.svelte';
   import RowHeaderDiscreteTree from './RowHeaderDiscreteTree.svelte';
@@ -35,8 +33,6 @@
   export let height: number = 0;
   export let layers: Layer[];
   export let resources: Resource[];
-  /** SPIKE 2: resolves legacy layers and labels resources that come from a non-default source. */
-  export let timelineSources: TimelineSourceRegistry | null = null;
   export let rowDragMoveDisabled: boolean = false;
   export let rowHeaderDragHandleWidthPx: number = 2;
   export let rowId: number = 0;
@@ -45,7 +41,6 @@
   export let yAxes: Axis[];
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedSpanId: SpanId | null = null;
-  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let selectedExternalEventId: ExternalEventId | null = null;
 
   let resourceLabels: {
@@ -53,7 +48,6 @@
     color: string;
     label: string;
     resource: Resource;
-    sourceLabel: string;
     unit: string;
     yAxisId: number;
   }[] = [];
@@ -78,7 +72,6 @@
     yAxesWidth = width;
   }
 
-  $: defaultSourceId = timelineSources?.defaultSourceId ?? null;
   $: {
     resourceLabels = [];
     yAxes.map(yAxis => {
@@ -87,19 +80,15 @@
       );
       // For each layer get the resources and color
       yAxisResourceLayers.forEach(layer => {
-        const layerResource = getResourceForLayer(layer, resources, defaultSourceId) as Resource;
+        const layerResource = getResourceForLayer(layer, resources) as Resource;
         if (layerResource) {
           const color = (layer as LineLayer).lineColor || 'var(--st-gray-80)';
           const unit = layerResource.schema.metadata?.unit?.value || '';
-          // SPIKE 2: same-named resources from two sources must not look identical.
-          const sourceId = layerResource.sourceId ?? defaultSourceId;
-          const sourceLabel = sourceId && sourceId !== defaultSourceId ? getSourceLabel(timelineSources, sourceId) : '';
           const resourceLabel = {
             chartType: layer.chartType,
             color,
-            label: `${layer.name || layerResource.name}${sourceLabel ? ` · ${sourceLabel}` : ''}`,
+            label: layer.name || layerResource.name,
             resource: layerResource,
-            sourceLabel: getSourceLabel(timelineSources, sourceId),
             unit,
             yAxisId: yAxis.id,
           };
@@ -170,7 +159,6 @@
               {discreteTree}
               {selectedActivityDirectiveId}
               {selectedSpanId}
-              {selectedSpanKey}
               {selectedExternalEventId}
               on:discrete-tree-node-change
               on:mouseDown
@@ -190,11 +178,7 @@
                 <div
                   class="st-typography-label small-text text-content"
                   style:color={label.color}
-                  use:tooltip={{
-                    content: label.sourceLabel ? `${label.resource.name} (${label.sourceLabel})` : label.resource.name,
-                    interactive: true,
-                    placement: 'right',
-                  }}
+                  use:tooltip={{ content: label.resource.name, interactive: true, placement: 'right' }}
                 >
                   <!-- See https://stackoverflow.com/a/27961022 for explanation of &lrm; "left to right mark" -->
                   &lrm;{label.label}
@@ -220,7 +204,6 @@
             on:updateYAxesWidth={onUpdateYAxesWidth}
             {layers}
             {resources}
-            {defaultSourceId}
           />
         </div>
       </div>

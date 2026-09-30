@@ -54,7 +54,6 @@ import { generateRandomPastelColor } from './color';
 import { getExternalEventRowId } from './externalEvents';
 import { filterEmpty, lowercase, stringCompare } from './generic';
 import { getDoyTime } from './time';
-import { getSpanKeyForSpan, resourceMatchesFilter, toResourceLayerFilter } from './timelineSources';
 
 export enum TimelineLockStatus {
   Locked = 'Locked',
@@ -263,7 +262,7 @@ export function searchQuadtreeRect<T>(
   y: number,
   maxH: number,
   maxW: number,
-  map: Record<number | string, T>,
+  map: Record<number, T>,
 ): T[] {
   const points: T[] = [];
 
@@ -274,7 +273,7 @@ export function searchQuadtreeRect<T>(
           do {
             const { data: p } = node;
             if (p.x + p.width >= x && p.x < x && p.y + p.height >= y && p.y < y) {
-              points.push(map[p.id]);
+              points.push(map[p.id as number]);
             }
           } while ((node = node.next));
         }
@@ -625,9 +624,7 @@ export function createTimelineExternalEventLayer(
 }
 
 export function createTimelineResourceLayer(timelines: Timeline[], resourceType: ResourceType) {
-  const { name, schema, sourceId } = resourceType;
-  // SPIKE 2: catalog entries from a non-default source carry sourceId; keep it on the layer.
-  const resource = toResourceLayerFilter(name, sourceId, null);
+  const { name, schema } = resourceType;
   const { type: schemaType } = schema;
 
   const unit = schema.metadata?.unit?.value;
@@ -644,9 +641,9 @@ export function createTimelineResourceLayer(timelines: Timeline[], resourceType:
   });
 
   const layer = isDiscreteSchema
-    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource } })
+    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name } })
     : isNumericSchema
-      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource } })
+      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name } })
       : null;
 
   return { layer, yAxis };
@@ -708,7 +705,6 @@ export function getYAxisBounds(
   layers: Layer[],
   resources: Resource[],
   viewTimeRange?: TimeRange,
-  defaultSourceId?: string | null,
 ): number[] {
   // Find all layers that are associated with this y axis
   const yAxisLayers = layers.filter(layer => layer.yAxisId === yAxis.id);
@@ -717,7 +713,7 @@ export function getYAxisBounds(
   let minY: number | undefined = undefined;
   let maxY: number | undefined = undefined;
   yAxisLayers.forEach(layer => {
-    const layerResource = getResourceForLayer(layer, resources, defaultSourceId) as Resource;
+    const layerResource = getResourceForLayer(layer, resources) as Resource;
     if (layerResource) {
       let leftValue: ResourceValue | undefined;
       let rightValue: ResourceValue | undefined;
@@ -803,11 +799,10 @@ export function getYAxesWithScaleDomains(
   layers: Layer[],
   resources: Resource[],
   viewTimeRange: TimeRange,
-  defaultSourceId?: string | null,
 ): Axis[] {
   return yAxes.map(yAxis => {
     if (yAxis.domainFitMode !== 'manual') {
-      const scaleDomain = getYAxisBounds(yAxis, layers, resources, viewTimeRange, defaultSourceId);
+      const scaleDomain = getYAxisBounds(yAxis, layers, resources, viewTimeRange);
       return { ...yAxis, scaleDomain };
     }
     return yAxis;
@@ -952,13 +947,8 @@ export function minMaxDecimation<T>(
 /**
  * Filters list of resources by the layer's resource filter
  */
-export function getResourceForLayer(
-  layer: Layer,
-  resources: Resource[] | ResourceType[],
-  defaultSourceId?: string | null,
-) {
-  // SPIKE 2: match on (source, name); two sources may both have a resource with this name.
-  return resources.find(resource => resourceMatchesFilter(resource, layer.filter.resource, defaultSourceId));
+export function getResourceForLayer(layer: Layer, resources: Resource[] | ResourceType[]) {
+  return resources.find(resource => layer.filter.resource === resource.name);
 }
 
 /**
@@ -1004,22 +994,8 @@ export function generateDiscreteTreeUtil(
   viewTimeRange: TimeRange,
   hasExternalEventsLayer: boolean,
   hasActivityLayer: boolean,
-  // SPIKE 3: set when the spans come from a non-default source, so its type groups neither share
-  // expansion state nor a label with same-named groups from another source.
-  nodeNamespace: { idPrefix: string; labelSuffix: string } | null = null,
 ): DiscreteTree {
-  // SPIKE 3: a source without directives (imported intervals) has no directive roots, so in
-  // 'directive' hierarchy mode its root spans (no parent in this source) stand in as the roots.
-  const spanRootsOnly = hierarchyMode === 'directive' && nodeNamespace !== null;
-  const groupedSpans =
-    showSpans && hierarchyMode === 'flat'
-      ? groupBy(spans, 'type')
-      : showSpans && spanRootsOnly
-        ? groupBy(
-            spans.filter(span => span.parent_id === null || !spansMap[span.parent_id]),
-            'type',
-          )
-        : {};
+  const groupedSpans = showSpans && hierarchyMode === 'flat' ? groupBy(spans, 'type') : {};
   const groupedDirectives = showDirectives ? groupBy(directives, 'type') : {};
   const groupByMethodFormatted = `pkey.${groupByMethod}`; // Both event_type_name and source_key are within the pkey field
   const groupedExternalEvents = groupBy(externalEvents, groupByMethodFormatted);
@@ -1033,9 +1009,9 @@ export function generateDiscreteTreeUtil(
       .forEach(type => {
         const spanGroup = groupedSpans[type];
         const directiveGroup = groupedDirectives[type];
-        const id = `${nodeNamespace?.idPrefix ?? ''}${type}`;
+        const id = type;
         const expanded = getNodeExpanded(id, discreteTreeExpansionMap);
-        const label = `${type}${nodeNamespace?.labelSuffix ?? ''}`;
+        const label = type;
         const children: DiscreteTreeNode['children'] = [];
         const items: DiscreteTreeNode['items'] = [];
         const seenSpans: Record<string, boolean> = {};
@@ -1066,7 +1042,7 @@ export function generateDiscreteTreeUtil(
             items.push({ directive, ...(childSpan ? { span: childSpan } : null) });
           });
         }
-        if (spanGroup && (hierarchyMode === 'flat' || spanRootsOnly)) {
+        if (spanGroup && hierarchyMode === 'flat') {
           spanGroup.forEach(span => {
             if (!seenSpans[span.span_id]) {
               if (expanded) {
@@ -1176,7 +1152,7 @@ export function generateDiscreteTreeUtil(
 
 function getUniqueNodeItems(nodes: DiscreteTreeNode[]) {
   const uniqueDirectiveLookup: Set<number> = new Set();
-  const uniqueSpanLookup: Set<string> = new Set();
+  const uniqueSpanLookup: Set<number> = new Set();
   const uniqueExternalEventLookup: Set<string> = new Set();
   return nodes
     .flatMap((node: DiscreteTreeNode) => node.items)
@@ -1184,8 +1160,8 @@ function getUniqueNodeItems(nodes: DiscreteTreeNode[]) {
       if (nodeItem.directive && !uniqueDirectiveLookup.has(nodeItem.directive.id)) {
         uniqueDirectiveLookup.add(nodeItem.directive.id);
         flattenedNodes.push(nodeItem);
-      } else if (nodeItem.span && !uniqueSpanLookup.has(getSpanKeyForSpan(nodeItem.span))) {
-        uniqueSpanLookup.add(getSpanKeyForSpan(nodeItem.span));
+      } else if (nodeItem.span && !uniqueSpanLookup.has(nodeItem.span.span_id)) {
+        uniqueSpanLookup.add(nodeItem.span.span_id);
         flattenedNodes.push(nodeItem);
       } else if (
         nodeItem.externalEvent &&

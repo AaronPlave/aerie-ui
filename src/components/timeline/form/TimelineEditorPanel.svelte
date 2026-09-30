@@ -23,10 +23,9 @@
   import ActivityModeWidthIcon from '../../../assets/width.svg?component';
   import { ViewDefaultDiscreteOptions } from '../../../constants/view';
   import { ViewConstants } from '../../../enums/view';
-  import { maxTimeRange as planMaxTimeRange, viewTimeRange } from '../../../stores/plan';
+  import { maxTimeRange, viewTimeRange } from '../../../stores/plan';
   import { plugins } from '../../../stores/plugins';
   import { yAxesWithScaleDomainsCache } from '../../../stores/simulation';
-  import { getTimelineSourceCatalog } from '../../../stores/timelineSourceCatalog';
   import {
     selectedRowId,
     selectedTimelineId,
@@ -40,7 +39,6 @@
   import type { RadioButtonId } from '../../../types/radio-buttons';
   import type {
     ActivityLayer,
-    ActivityLayerFilter,
     ActivityOptions,
     Axis,
     ChartType,
@@ -86,9 +84,6 @@
   import EditorSection from './TimelineEditor/EditorSection.svelte';
   import TimelineLayerEditor from './TimelineEditor/TimelineLayerEditor.svelte';
   import TimelineEditorYAxisSettings from './TimelineEditorYAxisSettings.svelte';
-
-  // SPIKE: plan.ts derives maxTimeRange from the plan; a non-plan page supplies its own bounds.
-  const maxTimeRange = getTimelineSourceCatalog().maxTimeRange ?? planMaxTimeRange;
 
   export let gridSection: ViewGridSection;
 
@@ -379,23 +374,6 @@
           ...layer,
           [property]: value,
         };
-      }
-      return l;
-    });
-    viewUpdateRow('layers', newLayers);
-  }
-
-  // SPIKE 3: rebinding an activity layer to another source changes its source and (pruned) filter at once.
-  function handleUpdateActivityLayerSource(
-    sourceId: string | undefined,
-    filter: ActivityLayerFilter | undefined,
-    layer: Layer,
-  ) {
-    const newLayers = layers.map(l => {
-      if (layer.id === l.id) {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { sourceId: _previous, ...rest } = l as ActivityLayer;
-        return { ...rest, filter: { ...l.filter, activity: filter }, ...(sourceId ? { sourceId } : null) };
       }
       return l;
     });
@@ -1118,8 +1096,6 @@
                 on:duplicate={() => handleDuplicateLayer(layer)}
                 on:filterChange={({ detail: { filter } }) =>
                   handleUpdateLayerProperty('filter', { activity: filter }, layer)}
-                on:activitySourceChange={({ detail: { filter, sourceId } }) =>
-                  handleUpdateActivityLayerSource(sourceId, filter, layer)}
               />
             {/each}
           </div>

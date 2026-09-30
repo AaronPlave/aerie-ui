@@ -1,7 +1,6 @@
 <svelte:options immutable={true} />
 
 <script lang="ts">
-  import { readable } from 'svelte/store';
   import {
     activityDirectivesMap,
     initialActivityDirectivesLoading,
@@ -26,8 +25,6 @@
     spansMap,
     yAxesWithScaleDomainsCache,
   } from '../../stores/simulation';
-  import { getTimelineSourceCatalog } from '../../stores/timelineSourceCatalog';
-  import { createPlanTimelineSourceRegistry, selectedSourceSpan } from '../../stores/timelineSources';
   import {
     timelineInteractionMode,
     timelineLockStatus,
@@ -47,11 +44,9 @@
     Row,
     Timeline as TimelineType,
   } from '../../types/timeline';
-  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
   import { featurePermissions } from '../../utilities/permissions';
-  import { getSpanKey, getSpanKeyForSpan } from '../../utilities/timelineSources';
   import Panel from '../ui/Panel.svelte';
   import PanelHeaderActions from '../ui/PanelHeaderActions.svelte';
   import Timeline from './Timeline.svelte';
@@ -70,29 +65,11 @@
   let interpolateHoverValue = false;
   let limitTooltipToLine = false;
   let showTimelineTooltip = true;
-  let timelineSources: TimelineSourceRegistry | null = null;
 
   $: if (user !== null && $plan !== null) {
     hasUpdateDirectivePermission = featurePermissions.activityDirective.canUpdate(user, $plan) && !$planReadOnly;
     hasUpdateSimulationPermission = featurePermissions.simulation.canUpdate(user, $plan) && !$planReadOnly;
   }
-
-  // SPIKE 2: the plan page supplies a registry (plan simulation + attached sources). Without one,
-  // fall back to a registry holding only the plan's own simulation, built exactly as in Spike 1.
-  const catalogSources = getTimelineSourceCatalog().sources;
-  const fallbackSources = catalogSources ?? createPlanTimelineSourceRegistry(user, readable([]));
-  $: timelineSources = $fallbackSources;
-
-  // SPIKE 3: a plan selection made anywhere (tables, forms) supersedes an imported-span selection.
-  $: if ($selectedSpanId !== null || $selectedActivityDirectiveId !== null) {
-    selectedSourceSpan.set(null);
-  }
-  let selectedSpanKey: SpanKey | null = null;
-  $: selectedSpanKey = $selectedSourceSpan
-    ? getSpanKeyForSpan($selectedSourceSpan)
-    : $selectedSpanId !== null
-      ? getSpanKey({ sourceId: null, spanId: $selectedSpanId })
-      : null;
 
   $: timelines = $view?.definition.plan.timelines || [];
   $: timeline = timelines.find(timeline => {
@@ -110,7 +87,7 @@
     const {
       detail: { selectedActivityDirectiveId, selectedSpanId, selectedExternalEventId },
     } = event;
-    if (selectedActivityDirectiveId !== undefined || selectedSpanId !== undefined || $selectedSourceSpan) {
+    if (selectedActivityDirectiveId !== undefined || selectedSpanId !== undefined) {
       viewTogglePanel({ state: true, type: 'right', update: { rightComponentTop: 'ActivityFormPanel' } });
     } else if (selectedExternalEventId !== undefined) {
       viewTogglePanel({ state: true, type: 'right', update: { rightComponentTop: 'ExternalEventFormPanel' } });
@@ -130,15 +107,9 @@
   function onMouseDown(event: CustomEvent<MouseDown>) {
     const { detail } = event;
     const { activityDirectives, spans, externalEvents } = detail;
-    selectedSourceSpan.set(null);
     if (externalEvents !== undefined && externalEvents.length) {
       selectExternalEvent(getExternalEventRowId(externalEvents[0].pkey));
       selectActivity(null, null);
-    } else if (spans != null && spans.length && spans[0].sourceId) {
-      // SPIKE 3: imported span. Not a plan activity: clear the plan selection, select (source, span_id).
-      selectActivity(null, null, false);
-      selectExternalEvent(null);
-      selectedSourceSpan.set(spans[0]);
     } else if (spans != null && spans.length) {
       selectActivity(null, spans[0].span_id);
       selectExternalEvent(null);
@@ -268,14 +239,12 @@
       planEndTimeDoy={$plan?.end_time_doy ?? ''}
       plan={$plan}
       planStartTimeYmd={$plan?.start_time ?? ''}
-      {timelineSources}
       resourceTypes={$resourceTypes}
       {timeline}
       timelineInteractionMode={$timelineInteractionMode}
       selectedActivityDirectiveId={$selectedActivityDirectiveId}
       selectedExternalEventId={$selectedExternalEventId}
       selectedSpanId={$selectedSpanId}
-      {selectedSpanKey}
       simulation={$simulation}
       simulationDataset={$simulationDataset}
       spanUtilityMaps={$spanUtilityMaps}

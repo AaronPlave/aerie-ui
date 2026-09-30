@@ -34,7 +34,6 @@
     Timeline,
     XAxisTick,
   } from '../../types/timeline';
-  import type { SpanKey, TimelineSourceRegistry } from '../../types/timelineSource';
   import { clamp } from '../../utilities/generic';
   import { formatDate } from '../../utilities/time';
   import { MAX_CANVAS_SIZE, TimelineInteractionMode, TimelineLockStatus, getXScale } from '../../utilities/timeline';
@@ -60,14 +59,10 @@
   export let planEndTimeDoy: string;
   export let plan: Plan | null = null;
   export let planStartTimeYmd: string;
-  /** SPIKE 2: every resource source this timeline can draw from (replaces the single provider). */
-  export let timelineSources: TimelineSourceRegistry | null = null;
   export let resourceTypes: ResourceType[] = [];
   export let selectedActivityDirectiveId: ActivityDirectiveId | null = null;
   export let selectedExternalEventId: ExternalEventId | null = null;
   export let selectedSpanId: SpanId | null = null;
-  /** SPIKE 3: source-qualified selection; undefined falls back to `selectedSpanId` (default source). */
-  export let selectedSpanKey: SpanKey | null | undefined = undefined;
   export let simulation: Simulation | null = null;
   export let simulationDataset: SimulationDataset | null = null;
   export let spanUtilityMaps: SpanUtilityMaps;
@@ -83,8 +78,6 @@
   export let interpolateHoverValue: boolean = false;
   export let showTimelineTooltip: boolean = false;
   export let limitTooltipToLine: boolean = false;
-  // SPIKE: the start/end header was only shown when a plan exists, though it only needs maxTimeRange.
-  export let showTimeDisplay: boolean = false;
 
   const dispatch = createEventDispatcher<{
     mouseDown: MouseDown;
@@ -401,7 +394,7 @@
 
 <div bind:this={timelineDiv} bind:clientWidth class="timeline" id={`timeline-${timeline?.id}`}>
   <div bind:this={timelineHistogramDiv} class="timeline-time-row">
-    {#if plan || showTimeDisplay}
+    {#if plan}
       <TimelineTimeDisplay
         planStartTime={formattedPlanStartTime}
         planEndTime={formattedPlanEndTime}
@@ -506,7 +499,6 @@
             {planEndTimeDoy}
             {plan}
             {planStartTimeYmd}
-            {timelineSources}
             {rowDragMoveDisabled}
             {decimate}
             {interpolateHoverValue}
@@ -515,7 +507,7 @@
             {selectedActivityDirectiveId}
             {selectedExternalEventId}
             {selectedSpanId}
-            {selectedSpanKey}
+            {simulationDataset}
             {spanUtilityMaps}
             {spansMap}
             {timelineInteractionMode}
@@ -550,14 +542,7 @@
   </div>
 
   <!-- Timeline Tooltip. -->
-  <Tooltip
-    bind:this={tooltip}
-    {mouseOver}
-    {interpolateHoverValue}
-    hidden={!showTimelineTooltip}
-    resourceTypes={timelineSources ? timelineSources.sources.flatMap(source => source.resourceTypes) : resourceTypes}
-    {timelineSources}
-  />
+  <Tooltip bind:this={tooltip} {mouseOver} {interpolateHoverValue} hidden={!showTimelineTooltip} {resourceTypes} />
 
   <!-- Timeline Context Menu. -->
   <TimelineContextMenu
