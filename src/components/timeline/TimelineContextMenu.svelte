@@ -11,7 +11,7 @@
   import type { ActivityDirective, ActivityDirectivesMap } from '../../types/activity';
   import type { User } from '../../types/app';
   import type { Plan } from '../../types/plan';
-  import type { Simulation, SimulationDataset, Span, SpansMap, SpanUtilityMaps } from '../../types/simulation';
+  import type { Simulation, Span, SpansMap, SpanUtilityMaps } from '../../types/simulation';
   import type {
     ActivityOptions,
     DiscreteOptions,
@@ -30,7 +30,7 @@
   import effects from '../../utilities/effects';
   import { permissionHandler } from '../../utilities/permissionHandler';
   import { featurePermissions } from '../../utilities/permissions';
-  import { getDoyTime, getIntervalInMs, getUnixEpochTimeFromInterval } from '../../utilities/time';
+  import { getDoyTime } from '../../utilities/time';
   import { createVerticalGuide, isActivityLayer } from '../../utilities/timeline';
   import PasteActivitiesContextMenu from '../activity/PasteActivitiesContextMenu.svelte';
   import ContextMenuInternal from '../context-menu/ContextMenu.svelte';
@@ -41,9 +41,7 @@
   export let hasUpdateSimulationPermission: boolean = false;
   export let maxTimeRange: TimeRange = { end: 0, start: 0 };
   export let plan: Plan | null = null;
-  export let planStartTimeYmd: string;
   export let simulation: Simulation | null;
-  export let simulationDataset: SimulationDataset | null = null;
   export let spansMap: SpansMap;
   export let spanUtilityMaps: SpanUtilityMaps;
   export let verticalGuides: VerticalGuide[];
@@ -115,7 +113,6 @@
     hasActivityLayer = false;
   }
 
-  $: startYmd = simulationDataset?.simulation_start_time ?? planStartTimeYmd;
   // Use the directive's already-computed absolute start time so that directives anchored to the plan
   // end (or to other directives) resolve correctly instead of being recomputed from the plan start.
   $: activityDirectiveStartDate = activityDirective ? new Date(activityDirective.start_time_ms) : null;
@@ -172,9 +169,10 @@
     }
   }
 
+  // Use the absolute times the span was drawn with rather than re-deriving them from this menu's
+  // simulation dataset prop: the two bases only agree while the spans came from that same dataset.
   function getSpanDate(span: Span, includeDuration: boolean = false) {
-    const duration = includeDuration ? getIntervalInMs(span.duration) : 0;
-    return new Date(getUnixEpochTimeFromInterval(startYmd, span.start_offset) + duration);
+    return new Date(includeDuration ? span.endMs : span.startMs);
   }
 
   function onFocus(duration: number) {

@@ -561,11 +561,9 @@
     on:viewTimeRangeReset={() => viewTimeRangeChanged(maxTimeRange)}
     on:viewTimeRangeChanged={event => viewTimeRangeChanged(event.detail)}
     {simulation}
-    {simulationDataset}
     spansMap={spansMap || {}}
     {spanUtilityMaps}
     {plan}
-    {planStartTimeYmd}
     verticalGuides={timeline?.verticalGuides ?? []}
     {xScaleView}
     {user}
