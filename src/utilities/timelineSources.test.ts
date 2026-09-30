@@ -49,6 +49,7 @@ function planSource(simulationDataset: SimulationDataset | null, spans: Span[] =
   return createPlanSimulationSource({
     activityTypes: [],
     activityTypesLoading: false,
+    modelResourceTypes: [soc, { name: '/mode', schema: { type: 'string' } }],
     profileCatalog: [soc],
     profileCatalogLoading: false,
     simulationDataset,
@@ -121,7 +122,8 @@ describe('layer source resolution', () => {
 
   test('without simulation results the Plan source serves an explanatory error instead of data', () => {
     const source = planSource(null);
-    expect(source.resources?.catalog).toEqual([soc]);
+    // Layers can be bound to model resources before the plan is simulated.
+    expect(source.resources?.catalog.map(type => type.name)).toEqual(['/battery/soc', '/mode']);
     const subscription = source.resources?.subscribe('/battery/soc', {
       plan: { start_time: '2029-001T00:00:00' } as any,
       simulationDataset: null,

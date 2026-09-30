@@ -31,6 +31,7 @@ import type {
   ActivityLayerFilter,
   ActivityOptions,
   Axis,
+  ChartType,
   DiscreteTree,
   DiscreteTreeExpansionMap,
   DiscreteTreeNode,
@@ -56,6 +57,7 @@ import { generateRandomPastelColor } from './color';
 import { getExternalEventRowId } from './externalEvents';
 import { filterEmpty, lowercase, stringCompare } from './generic';
 import { getDoyTime } from './time';
+import { PLAN_SOURCE_ID } from './timelineSources';
 
 export enum TimelineLockStatus {
   Locked = 'Locked',
@@ -625,37 +627,164 @@ export function createTimelineExternalEventLayer(
   };
 }
 
+export type ResourceTypeFamily = 'discrete' | 'numeric';
+
+/** How a resource declaration is drawn: which family its schema is in, its default chart type and its axis. */
+export type ResourceLayerPresentation = {
+  axisLabel: string;
+  chartType: 'line' | 'x-range' | null;
+  family: ResourceTypeFamily | null;
+  tickCount: number;
+  unit: string | undefined;
+};
+
+export function getResourceTypeFamily({ schema }: ResourceType): ResourceTypeFamily | null {
+  const { type: schemaType } = schema;
+  if (schemaType === 'boolean' || schemaType === 'string' || schemaType === 'variant') {
+    return 'discrete';
+  }
+  if (
+    schemaType === 'int' ||
+    schemaType === 'real' ||
+    schemaType === 'duration' ||
+    (schemaType === 'struct' && schema?.items?.rate?.type === 'real' && schema?.items?.initial?.type === 'real')
+  ) {
+    return 'numeric';
+  }
+  return null;
+}
+
+/**
+ * The single place that maps a resource declaration to its presentation, used both when a resource layer is
+ * created and when it is rebound to another source or resource.
+ */
+export function getResourceLayerPresentation(
+  resourceType: ResourceType,
+  sourceId?: TimelineSourceId,
+  sourceLabel?: string,
+): ResourceLayerPresentation {
+  const family = getResourceTypeFamily(resourceType);
+  const unit = resourceType.schema.metadata?.unit?.value;
+  // Several sources can provide the same resource name, so an axis names its source unless it is the Plan's own
+  // simulation (the source a model resource is expected to come from).
+  const sourceSuffix = sourceId && sourceId !== PLAN_SOURCE_ID && sourceLabel ? ` · ${sourceLabel}` : '';
+  return {
+    axisLabel: `${resourceType.name}${unit ? ` (${unit})` : ''}${sourceSuffix}`,
+    chartType: family === 'discrete' ? 'x-range' : family === 'numeric' ? 'line' : null,
+    family,
+    tickCount: family === 'numeric' ? 5 : 0,
+    unit,
+  };
+}
+
 export function createTimelineResourceLayer(
   timelines: Timeline[],
   resourceType: ResourceType,
   sourceId?: TimelineSourceId,
   sourceLabel?: string,
 ) {
-  const { name, schema } = resourceType;
-  const { type: schemaType } = schema;
-
-  const unit = schema.metadata?.unit?.value;
-  const isDiscreteSchema = schemaType === 'boolean' || schemaType === 'string' || schemaType === 'variant';
-  const isNumericSchema =
-    schemaType === 'int' ||
-    schemaType === 'real' ||
-    schemaType === 'duration' ||
-    (schemaType === 'struct' && schema?.items?.rate?.type === 'real' && schema?.items?.initial?.type === 'real');
-
-  // A source-bound layer names its source on its axis: several sources can provide the same resource name.
-  const yAxis = createYAxis(timelines, {
-    label: { text: `${name}${unit ? ` (${unit})` : ''}${sourceId && sourceLabel ? ` · ${sourceLabel}` : ''}` },
-    tickCount: isNumericSchema ? 5 : 0,
-  });
+  const { name } = resourceType;
+  const { axisLabel, chartType, tickCount } = getResourceLayerPresentation(resourceType, sourceId, sourceLabel);
+  const yAxis = createYAxis(timelines, { label: { text: axisLabel }, tickCount });
 
   const source = sourceId ? { sourceId } : {};
-  const layer = isDiscreteSchema
-    ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
-    : isNumericSchema
-      ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
-      : null;
+  const layer =
+    chartType === 'x-range'
+      ? createTimelineXRangeLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
+      : chartType === 'line'
+        ? createTimelineLineLayer(timelines, [yAxis], { filter: { resource: name }, ...source })
+        : null;
 
   return { layer, yAxis };
+}
+
+export type ResourceLayerBinding = {
+  /** The declaration of the resource the layer read before, if known: decides what styling is still valid. */
+  previousResourceType?: ResourceType | null;
+  resourceName: string;
+  /** The declaration of `resourceName` in the new source; null when that source does not provide it. */
+  resourceType: ResourceType | null;
+  sourceId?: TimelineSourceId;
+  sourceLabel?: string;
+};
+
+/**
+ * Rebinds a resource layer to another source and/or resource, refreshing everything derived from the resource
+ * declaration (chart type, axis label, unit and scale) with the same rules as `createTimelineResourceLayer`.
+ * The layer keeps its id and, while the resource stays in the same schema family, its styling; its axis is
+ * updated in place unless other layers share it, in which case the layer gets its own axis and the shared one
+ * is left untouched. Returns the row's new layers and axes.
+ */
+export function rebindResourceLayer(
+  timelines: Timeline[],
+  row: Pick<Row, 'layers' | 'yAxes'>,
+  layer: Layer,
+  binding: ResourceLayerBinding,
+): { layers: Layer[]; yAxes: Axis[] } {
+  const { previousResourceType, resourceName, resourceType, sourceId, sourceLabel } = binding;
+  const { sourceId: _previousSourceId, ...unbound } = layer; // eslint-disable-line @typescript-eslint/no-unused-vars
+  let rebound: Layer = {
+    ...unbound,
+    filter: { ...layer.filter, resource: resourceName },
+    ...(sourceId ? { sourceId } : {}),
+  };
+  const replaceLayer = (next: Layer) => row.layers.map(l => (l.id === layer.id ? next : l));
+
+  // Without a declaration there is nothing to derive a presentation from; it is refreshed once a resource that
+  // the source provides is selected.
+  if (!resourceType) {
+    return { layers: replaceLayer(rebound), yAxes: row.yAxes };
+  }
+
+  const presentation = getResourceLayerPresentation(resourceType, sourceId, sourceLabel);
+  const previousFamily = previousResourceType ? getResourceTypeFamily(previousResourceType) : null;
+  const previousUnit = previousResourceType?.schema.metadata?.unit?.value;
+
+  // Discrete values can only be drawn as x-ranges. Numeric values can be drawn either way, so a user's choice
+  // survives unless the layer was an x-range only because its previous resource was discrete.
+  let chartType: ChartType = layer.chartType;
+  if (presentation.family === 'discrete') {
+    chartType = 'x-range';
+  } else if (presentation.family === 'numeric' && previousFamily === 'discrete') {
+    chartType = 'line';
+  }
+  if (chartType !== layer.chartType) {
+    const args = { filter: rebound.filter, id: layer.id, name: layer.name, ...(sourceId ? { sourceId } : {}) };
+    rebound =
+      chartType === 'x-range'
+        ? createTimelineXRangeLayer(timelines, [], {
+            ...args,
+            colorScheme: getUniqueColorSchemeForXRangeLayer(row as Row),
+          })
+        : createTimelineLineLayer(timelines, [], { ...args, lineColor: getUniqueColorForLineLayer(row as Row) });
+  }
+
+  // Scale settings only carry over when the values are still the same kind of quantity.
+  const scaleStillValid =
+    previousFamily !== null && previousFamily === presentation.family && previousUnit === presentation.unit;
+  const axis = row.yAxes.find(yAxis => yAxis.id === layer.yAxisId);
+  const axisShared = row.layers.some(other => other.id !== layer.id && other.yAxisId === layer.yAxisId);
+
+  if (!axis || axisShared) {
+    // Unique across the view and the row being edited, which may not be saved into `timelines` yet.
+    const id = Math.max(getNextYAxisID(timelines), ...row.yAxes.map(yAxis => yAxis.id + 1));
+    const yAxis = createYAxis(timelines, {
+      id,
+      label: { text: presentation.axisLabel },
+      tickCount: presentation.tickCount,
+    });
+    return { layers: replaceLayer({ ...rebound, yAxisId: yAxis.id }), yAxes: [...row.yAxes, yAxis] };
+  }
+
+  let updatedAxis: Axis = { ...axis, label: { ...axis.label, text: presentation.axisLabel } };
+  if (!scaleStillValid) {
+    const { scaleDomain: _scaleDomain, ...rest } = updatedAxis; // eslint-disable-line @typescript-eslint/no-unused-vars
+    updatedAxis = { ...rest, domainFitMode: 'fitTimeWindow', tickCount: presentation.tickCount };
+  }
+  return {
+    layers: replaceLayer({ ...rebound, yAxisId: axis.id }),
+    yAxes: row.yAxes.map(yAxis => (yAxis.id === axis.id ? updatedAxis : yAxis)),
+  };
 }
 
 /**

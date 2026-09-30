@@ -26,6 +26,7 @@
   import { maxTimeRange, viewTimeRange } from '../../../stores/plan';
   import { plugins } from '../../../stores/plugins';
   import { yAxesWithScaleDomainsCache } from '../../../stores/simulation';
+  import { timelineSources } from '../../../stores/timelineSources';
   import {
     selectedRowId,
     selectedTimelineId,
@@ -70,7 +71,9 @@
     isExternalEventLayer,
     isLineLayer,
     isXRangeLayer,
+    rebindResourceLayer,
   } from '../../../utilities/timeline';
+  import { findResourceType, getSource } from '../../../utilities/timelineSources';
   import { tooltip } from '../../../utilities/tooltip';
   import ColorPicker from '../../form/ColorPicker.svelte';
   import Input from '../../form/Input.svelte';
@@ -391,6 +394,30 @@
       return l;
     });
     viewUpdateRow('layers', newLayers);
+  }
+
+  // A resource layer's presentation (chart type, axis label, unit, scale) follows the declaration of what it reads,
+  // so changing its source or resource re-derives it; the axis update and the layer update go out together.
+  function handleRebindResourceLayer(sourceId: string | null, resourceName: string, layer: Layer) {
+    const registry = $timelineSources;
+    const rebound = rebindResourceLayer(timelines, { layers, yAxes }, layer, {
+      previousResourceType: findResourceType(registry, layer.sourceId, layer.filter.resource),
+      resourceName,
+      resourceType: findResourceType(registry, sourceId, resourceName),
+      sourceId: sourceId ?? undefined,
+      sourceLabel: getSource(registry, sourceId)?.label,
+    });
+    viewUpdateRow('yAxes', rebound.yAxes);
+    viewUpdateRow('layers', rebound.layers);
+  }
+
+  function handleUpdateResourceLayerFilter(resourceName: string, layer: Layer) {
+    if (layer.sourceId) {
+      handleRebindResourceLayer(layer.sourceId, resourceName, layer);
+    } else {
+      // Legacy (unbound) layers keep their existing behavior
+      handleUpdateLayerProperty('filter', { resource: resourceName }, layer);
+    }
   }
 
   function handleUpdateResourceLayerChartType(value: ChartType, layer: Layer) {
@@ -1145,9 +1172,9 @@
                 on:remove={() => handleDeleteLayerClick(layer)}
                 on:duplicate={() => handleDuplicateLayer(layer)}
                 on:filterChange={({ detail: { filter } }) =>
-                  handleUpdateLayerProperty('filter', { resource: filter }, layer)}
+                  handleUpdateResourceLayerFilter(typeof filter === 'string' ? filter : '', layer)}
                 on:sourceChange={({ detail: { filter, sourceId } }) =>
-                  handleUpdateLayerSource(sourceId, { resource: filter ?? '' }, layer)}
+                  handleRebindResourceLayer(sourceId, filter ?? '', layer)}
               />
               <!-- <TimelineEditorLayerSection
                 on:handleUpdateResourceLayerChartType={event => handleUpdateResourceLayerChartType(event.detail.value, layer)}

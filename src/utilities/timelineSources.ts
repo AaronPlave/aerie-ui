@@ -25,6 +25,28 @@ export function getExternalDatasetSourceId(datasetId: number): TimelineSourceId 
   return `${EXTERNAL_DATASET_SOURCE_PREFIX}${datasetId}`;
 }
 
+/**
+ * The declaration of a resource as a layer bound to `sourceId` would read it. An unbound (legacy) layer reads the
+ * first source that provides the name, in registry order: the Plan's simulation, then attached datasets.
+ */
+export function findResourceType(
+  registry: TimelineSourceRegistry | null | undefined,
+  sourceId: TimelineSourceId | null | undefined,
+  name: string | undefined,
+): ResourceType | null {
+  if (!registry || !name) {
+    return null;
+  }
+  const sources = sourceId ? [getSource(registry, sourceId)] : registry.sources;
+  for (const source of sources) {
+    const resourceType = source?.resources?.catalog.find(type => type.name === name);
+    if (resourceType) {
+      return resourceType;
+    }
+  }
+  return null;
+}
+
 export function getSource(
   registry: TimelineSourceRegistry | null | undefined,
   sourceId: TimelineSourceId | null | undefined,
@@ -109,6 +131,9 @@ type ResourceSubscriber = (name: string, context: TimelineResourceSubscriptionCo
 export type PlanSimulationSourceInput = {
   activityTypes: ActivityType[];
   activityTypesLoading: boolean;
+  /** Resources the mission model declares: the Plan can provide them once simulated. */
+  modelResourceTypes: ResourceType[];
+  /** Profiles present in the selected simulation dataset. */
   profileCatalog: ResourceType[];
   profileCatalogLoading: boolean;
   simulationDataset: SimulationDataset | null;
@@ -129,6 +154,12 @@ export function createPlanSimulationSource(input: PlanSimulationSourceInput): Ti
     .map(([name, count]) => ({ count, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const catalog = [...profileCatalog].sort((a, b) => a.name.localeCompare(b.name));
+  // What layers can bind to: the simulated profiles plus the model's declared resources (so a Plan layer can be
+  // set up before simulating); a simulated profile's declaration wins over the model's.
+  const simulatedNames = new Set(catalog.map(type => type.name));
+  const bindableCatalog = [...catalog, ...input.modelResourceTypes.filter(type => !simulatedNames.has(type.name))].sort(
+    (a, b) => a.name.localeCompare(b.name),
+  );
   const unavailableReason = simulationDataset ? undefined : 'The plan has no simulation results';
 
   // Serve the simulation dataset this source was built from, so the data always matches `revisionKey`.
@@ -192,7 +223,7 @@ export function createPlanSimulationSource(input: PlanSimulationSourceInput): Ti
     kind: 'plan',
     label: 'Simulation',
     resources: {
-      catalog,
+      catalog: bindableCatalog,
       loading: input.profileCatalogLoading,
       revisionKey: simulationDataset ? `simulation-dataset:${simulationDataset.id}` : null,
       subscribe,

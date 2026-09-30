@@ -17,7 +17,7 @@ import {
 import { createExternalResourceSubscription } from './externalResource';
 import { planDatasets, planModelActivityTypes } from './plan';
 import { createProfileSubscription } from './profile';
-import { simulationDataset, simulationDatasetId, spans } from './simulation';
+import { resourceTypes, simulationDataset, simulationDatasetId, spans } from './simulation';
 import { gqlSubscribable } from './subscribable';
 
 /** Profiles present in the selected simulation dataset: what the simulation actually produced. */
@@ -37,6 +37,7 @@ const planSimulationSource = derived(
   [
     planModelActivityTypes,
     planModelActivityTypes.loading,
+    resourceTypes,
     simulationProfileCatalog,
     simulationProfileCatalog.loading,
     simulationDataset,
@@ -45,6 +46,7 @@ const planSimulationSource = derived(
   ([
     $planModelActivityTypes,
     $activityTypesLoading,
+    $resourceTypes,
     $simulationProfileCatalog,
     $profileCatalogLoading,
     $simulationDataset,
@@ -53,6 +55,7 @@ const planSimulationSource = derived(
     createPlanSimulationSource({
       activityTypes: $planModelActivityTypes,
       activityTypesLoading: $activityTypesLoading,
+      modelResourceTypes: $resourceTypes,
       profileCatalog: $simulationDataset ? $simulationProfileCatalog : [],
       profileCatalogLoading: $profileCatalogLoading,
       simulationDataset: $simulationDataset,
