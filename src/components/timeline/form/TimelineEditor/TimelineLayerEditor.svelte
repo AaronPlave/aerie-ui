@@ -162,6 +162,7 @@
 
   function getExternalEventLayerFilterCount(layer: ExternalEventLayer) {
     return (
+      (layer.filter.externalEvent?.external_sources?.length ?? 0) +
       (layer.filter.externalEvent?.static_types?.length ?? 0) +
       (layer.filter.externalEvent?.dynamic_type_filters?.length ?? 0) +
       (layer.filter.externalEvent?.other_filters?.length ?? 0) +

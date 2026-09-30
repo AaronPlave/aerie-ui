@@ -37,6 +37,9 @@ function planDataset(datasetId: number, simulationDatasetId: number | null, name
   };
 }
 
+const externalEvent = (derivation_group_name: string, source_key: string, event_type_name: string, key: string) =>
+  ({ pkey: { derivation_group_name, event_type_name, key, source_key } }) as ExternalEvent;
+
 const staticSubscription = () => ({
   store: { subscribe: (run: (value: unknown) => void) => (run(null), () => {}) },
   unsubscribe: () => {},
@@ -145,9 +148,8 @@ describe('source browser adapters', () => {
     ]);
   });
 
-  test('external events keep derivation group > source > event type, and add through the unbound event path', () => {
-    const event = (derivation_group_name: string, source_key: string, event_type_name: string, key: string) =>
-      ({ pkey: { derivation_group_name, event_type_name, key, source_key } }) as ExternalEvent;
+  test('external events keep derivation group > source > event type, and each leaf carries its source scope', () => {
+    const event = externalEvent;
     const source = createExternalEventsSource({
       acknowledged: { 'DG B': { last_acknowledged_at: '' } },
       derivationGroups: [
@@ -188,6 +190,7 @@ describe('source browser adapters', () => {
     ]);
     const pass = source.browserNodes[0].children?.[0].children?.[0];
     expect(pass?.action).toEqual({
+      externalSources: [{ derivation_group_name: 'DG A', source_key: 'a.json' }],
       item: { attribute_schema: {}, name: 'Pass' },
       sourceId: null,
       typeName: 'externalEvent',

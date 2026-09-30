@@ -8,12 +8,18 @@
   import ExternalEventIcon from '../../../../assets/external-event-box-with-arrow.svg?component';
   import FilterWithPlusIcon from '../../../../assets/filter-with-plus.svg?component';
   import { externalEventsMap, externalEventTypes } from '../../../../stores/external-event';
+  import { derivationGroups, planDerivationGroupLinks } from '../../../../stores/external-source';
   import type { ExternalEventType } from '../../../../types/external-event';
-  import type { ExternalEventLayerFilter, ExternalEventLayerFilterSubfieldSchema } from '../../../../types/timeline';
+  import type {
+    ExternalEventLayerFilter,
+    ExternalEventLayerFilterSubfieldSchema,
+    ExternalEventSourceScope,
+  } from '../../../../types/timeline';
   import { compare, getTarget, lowercase } from '../../../../utilities/generic';
   import { pluralize } from '../../../../utilities/text';
   import {
     applyExternalEventLayerFilter,
+    getExternalEventSourceScopeKey,
     getMatchingTypesForExternalEventLayerFilter,
     getNextThingID,
   } from '../../../../utilities/timeline';
@@ -93,6 +99,28 @@
 
   function onRemoveAllManualTypes() {
     dirtyFilter = { ...dirtyFilter, static_types: [] };
+    dispatch('filterChange', { filter: dirtyFilter });
+  }
+
+  function onExternalSourceAdded(event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const scope = availableExternalSources.find(source => getExternalEventSourceScopeKey(source) === select.value);
+    select.value = '';
+    if (scope) {
+      dirtyFilter = { ...dirtyFilter, external_sources: [...(dirtyFilter.external_sources ?? []), scope] };
+      dispatch('filterChange', { filter: dirtyFilter });
+    }
+  }
+
+  function onExternalSourceRemoved(scope: ExternalEventSourceScope) {
+    const key = getExternalEventSourceScopeKey(scope);
+    const externalSources = (dirtyFilter.external_sources ?? []).filter(
+      source => getExternalEventSourceScopeKey(source) !== key,
+    );
+    dirtyFilter = { ...dirtyFilter, external_sources: externalSources };
+    if (!externalSources.length) {
+      delete dirtyFilter.external_sources;
+    }
     dispatch('filterChange', { filter: dirtyFilter });
   }
 
@@ -190,6 +218,17 @@
   $: if (filter) {
     dirtyFilter = structuredClone(filter);
   }
+
+  // External sources of the derivation groups linked to this plan that the filter does not already include.
+  $: selectedExternalSourceKeys = new Set((dirtyFilter.external_sources ?? []).map(getExternalEventSourceScopeKey));
+  $: linkedDerivationGroupNames = new Set($planDerivationGroupLinks.map(link => link.derivation_group_name));
+  $: availableExternalSources = $derivationGroups
+    .filter(group => linkedDerivationGroupNames.has(group.name))
+    .flatMap(group => group.sources.map(source_key => ({ derivation_group_name: group.name, source_key })))
+    .filter(source => !selectedExternalSourceKeys.has(getExternalEventSourceScopeKey(source)))
+    .sort((a, b) =>
+      compare(`${a.derivation_group_name}/${a.source_key}`, `${b.derivation_group_name}/${b.source_key}`),
+    );
 
   $: externalEvents = Object.values($externalEventsMap || {});
   $: appliedFilter = applyExternalEventLayerFilter(dirtyFilter, externalEvents);
@@ -425,6 +464,52 @@
       <div class="body">
         <CssGrid columns="0.7fr 3px 0.3fr" columnMinSizes={{ 0: 500, 1: 3, 2: 300 }} class="external-event-filter-grid">
           <div class="filters">
+            <div class="filter-section" aria-label="external-sources">
+              <div class="filter-section-header st-typography-medium">
+                <div class="filter-section-title">
+                  External Sources
+                  <div class="hint st-typography-body">
+                    {dirtyFilter.external_sources?.length ? 'Only events from these sources' : 'Any linked source'}
+                  </div>
+                </div>
+              </div>
+              <div class="filter-section-content filter-section-content-bordered">
+                {#if dirtyFilter.external_sources?.length}
+                  <div class="external-sources" role="list">
+                    {#each dirtyFilter.external_sources as scope (getExternalEventSourceScopeKey(scope))}
+                      <div class="external-source st-typography-body" role="listitem">
+                        <span class="external-source-group">{scope.derivation_group_name}</span>
+                        <span>/</span>
+                        <span>{scope.source_key}</span>
+                        <button
+                          class="st-button icon"
+                          aria-label={`Remove external source ${scope.source_key}`}
+                          on:click={() => onExternalSourceRemoved(scope)}
+                          use:tooltip={{ content: 'Remove source restriction' }}
+                        >
+                          <CloseIcon />
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+                <select
+                  class="st-select w-full"
+                  aria-label="Add external source"
+                  disabled={!availableExternalSources.length}
+                  on:change={onExternalSourceAdded}
+                >
+                  <option value="">
+                    {availableExternalSources.length ? 'Restrict to an external source…' : 'No other linked sources'}
+                  </option>
+                  {#each availableExternalSources as source (getExternalEventSourceScopeKey(source))}
+                    <option value={getExternalEventSourceScopeKey(source)}>
+                      {source.derivation_group_name} / {source.source_key}
+                    </option>
+                  {/each}
+                </select>
+              </div>
+            </div>
             <div class="filter-section" aria-label="manual-types">
               <div class="filter-section-header st-typography-medium">
                 Manually Select Types
@@ -789,6 +874,23 @@
     gap: 8px;
     max-height: 200px;
     overflow: auto;
+  }
+
+  .external-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+
+  .external-source {
+    align-items: center;
+    display: flex;
+    gap: 4px;
+  }
+
+  .external-source-group {
+    color: var(--st-gray-60);
   }
 
   .search-icon {

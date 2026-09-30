@@ -5,7 +5,7 @@ import type { User } from './app';
 import type { ExternalEventType } from './external-event';
 import type { Plan } from './plan';
 import type { ResourceType, SimulationDataset } from './simulation';
-import type { TimelineItemType } from './timeline';
+import type { ExternalEventSourceScope, TimelineItemType } from './timeline';
 
 /**
  * A timeline source is the analysis-facing adapter over one existing domain object (the plan's simulation,
@@ -85,6 +85,8 @@ export type TimelineSourceRegistry = {
  * "add to row" reuse the existing layer creation paths; `sourceId` is what makes the new layer source-bound.
  */
 export type SourceBrowserAction = {
+  /** External events only: the external source(s) the browser node represents, carried into the layer filter. */
+  externalSources?: ExternalEventSourceScope[];
   item: TimelineItemType;
   sourceId: TimelineSourceId | null;
   typeName: 'activity' | 'resource' | 'externalEvent';

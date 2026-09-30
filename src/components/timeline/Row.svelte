@@ -72,6 +72,7 @@
     applyExternalEventLayerFilter,
     directiveInView,
     externalEventInView,
+    externalEventSourceScopesEqual,
     generateDiscreteTreeUtil,
     getMatchingTypesForActivityLayerFilter,
     getYAxesWithScaleDomains,
@@ -910,8 +911,13 @@
       const sourceId = metadata?.sourceId ?? PLAN_SOURCE_ID;
       layer = activityLayers.find(activityLayer => resolveActivityLayerSourceId(activityLayer) === sourceId);
     } else if (type === 'externalEvent' && items.length) {
-      // adding an external event
-      layer = externalEventLayers[0];
+      // adding an external event: extend a layer that shows the same external sources
+      layer = externalEventLayers.find(externalEventLayer =>
+        externalEventSourceScopesEqual(
+          externalEventLayer.filter.externalEvent?.external_sources,
+          metadata?.externalSources,
+        ),
+      );
     }
     viewAddFilterToRow(items, type, metadata, rowId, layer, index);
   }

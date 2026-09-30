@@ -38,6 +38,7 @@ import type {
   ExternalEventLayer,
   ExternalEventLayerFilter,
   ExternalEventOptions,
+  ExternalEventSourceScope,
   HorizontalGuide,
   Layer,
   LineLayer,
@@ -1446,6 +1447,18 @@ export function applyActivityLayerFilter(
   return { directives: filteredDirectives, spans: filteredSpans };
 }
 
+/** A key for an external source that cannot collide across derivation groups. */
+export function getExternalEventSourceScopeKey({ derivation_group_name, source_key }: ExternalEventSourceScope) {
+  return JSON.stringify([derivation_group_name, source_key]);
+}
+
+/** Whether two source restrictions select the same sources (order-insensitive; absent and empty are equal). */
+export function externalEventSourceScopesEqual(a?: ExternalEventSourceScope[], b?: ExternalEventSourceScope[]) {
+  const keysA = new Set((a ?? []).map(getExternalEventSourceScopeKey));
+  const keysB = new Set((b ?? []).map(getExternalEventSourceScopeKey));
+  return keysA.size === keysB.size && [...keysA].every(key => keysB.has(key));
+}
+
 export function applyExternalEventLayerFilter(
   filter: ExternalEventLayerFilter | undefined,
   externalEvents: ExternalEvent[],
@@ -1453,6 +1466,7 @@ export function applyExternalEventLayerFilter(
   if (
     !filter ||
     (!filter.dynamic_type_filters?.length &&
+      !filter.external_sources?.length &&
       !filter.other_filters?.length &&
       !filter.static_types?.length &&
       (!filter.type_subfilters || !Object.keys(filter.type_subfilters).length))
@@ -1460,6 +1474,9 @@ export function applyExternalEventLayerFilter(
     return { externalEvents: [] };
   }
 
+  const sourceKeys = filter.external_sources?.length
+    ? new Set(filter.external_sources.map(getExternalEventSourceScopeKey))
+    : null;
   const staticTypeMap: Record<string, boolean> = (filter.static_types || []).reduce(
     (acc: Record<string, boolean>, cur: string) => {
       acc[cur] = true;
@@ -1469,6 +1486,9 @@ export function applyExternalEventLayerFilter(
   );
 
   const filteredExternalEvents: ExternalEvent[] = externalEvents.filter(externalEvent => {
+    if (sourceKeys && !sourceKeys.has(getExternalEventSourceScopeKey(externalEvent.pkey))) {
+      return false;
+    }
     return applyFiltersToExternalEvent(externalEvent, filter, staticTypeMap);
   });
 

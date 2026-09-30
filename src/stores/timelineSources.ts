@@ -76,18 +76,31 @@ const externalEventsSource = derived(
     selectedExternalEvents,
     selectedExternalEventsRaw.loading,
     planDerivationGroupLinks,
+    planDerivationGroupLinks.loading,
     derivationGroups,
+    derivationGroups.loading,
     derivationGroupVisibilityMap,
     derivationGroupsAcknowledged,
     externalEventTypes,
   ],
-  ([$events, $loading, $links, $derivationGroups, $visibility, $acknowledged, $eventTypes]) =>
+  ([
+    $events,
+    $eventsLoading,
+    $links,
+    $linksLoading,
+    $derivationGroups,
+    $derivationGroupsLoading,
+    $visibility,
+    $acknowledged,
+    $eventTypes,
+  ]) =>
     createExternalEventsSource({
       acknowledged: $acknowledged,
       derivationGroups: $derivationGroups,
       eventTypes: $eventTypes,
       events: $events,
-      loading: $loading,
+      // Events are only requested for linked groups, so their loading state matters only once there are links.
+      loading: $linksLoading || $derivationGroupsLoading || ($links.length > 0 && $eventsLoading),
       planDerivationGroupLinks: $links,
       visibility: $visibility,
     }),

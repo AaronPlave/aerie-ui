@@ -23,6 +23,7 @@ import {
   createTimelineExternalEventLayer,
   createTimelineLineLayer,
   createTimelineResourceLayer,
+  externalEventSourceScopesEqual,
   getNextThingID,
   getUniqueColorForActivityLayer,
   getUniqueColorForLineLayer,
@@ -636,9 +637,10 @@ export function getUpdatedLayerWithFilters(
         }),
       };
     } else if (type === 'externalEvent') {
+      const externalSources = metadata?.externalSources?.length ? { external_sources: metadata.externalSources } : {};
       return {
         layer: createTimelineExternalEventLayer(timelines, {
-          filter: { externalEvent: { static_types: itemNames } },
+          filter: { externalEvent: { ...externalSources, static_types: itemNames } },
         }),
       };
     } else {
@@ -673,7 +675,10 @@ export function getUpdatedLayerWithFilters(
     if (type === 'activity') {
       updatedFilter.activity = getUpdatedActivityLayerFilter(items, metadata, layer.filter.activity);
     } else if (type === 'externalEvent') {
+      // Only the types grow: the layer's other criteria, including its source restriction, are kept.
+      // viewAddFilterItemsToRow only merges into a layer whose source restriction matches the items'.
       updatedFilter.externalEvent = {
+        ...updatedFilter.externalEvent,
         static_types: Array.from(new Set([...(updatedFilter.externalEvent?.static_types || []), ...itemNames])),
       };
     }
@@ -730,6 +735,13 @@ export function viewAddFilterToRow(
   }
 }
 
+function getDefaultRowName(items: TimelineItemType[], typeName: string, metadata?: TimelineItemMetadata) {
+  const name = items.length === 1 ? items[0].name : `${capitalize(typeName)} Row`;
+  const externalSources = metadata?.externalSources ?? [];
+  // A row of source-restricted events names the source, since the same type can come from several.
+  return externalSources.length === 1 ? `${name} · ${externalSources[0].source_key}` : name;
+}
+
 export function viewAddFilterItemsToRow(
   items: TimelineItemType[],
   typeName: string /* 'activity' | 'resource' | 'externalEvent' */,
@@ -745,10 +757,9 @@ export function viewAddFilterItemsToRow(
 
   let newRows: Row[] = timelines[0].rows;
   let returnRow: Row | undefined = undefined;
-  const defaultRowName = `${capitalize(typeName)} Row`;
   // If no row was given, but one matches the default name, attempt to use it
   const row = typeof rowId === 'number' ? newRows.find(r => r.id === rowId) : undefined;
-  const targetRow = row || createRow(timelines, { name: items.length === 1 ? items[0].name : defaultRowName });
+  const targetRow = row || createRow(timelines, { name: getDefaultRowName(items, typeName, metadata) });
   if (!row) {
     // If no row is provided we assume there is no relevant layer
     const { layer: newLayer, yAxis } = getUpdatedLayerWithFilters(timelines, typeName, items, metadata);
@@ -767,7 +778,11 @@ export function viewAddFilterItemsToRow(
       (typeName === 'activity' &&
         metadata?.sourceId !== undefined &&
         resolveActivityLayerSourceId(layer) !== (metadata.sourceId ?? PLAN_SOURCE_ID)) ||
-      (layer.chartType !== 'externalEvent' && typeName === 'externalEvent')
+      (layer.chartType !== 'externalEvent' && typeName === 'externalEvent') ||
+      // An external-event layer shows one set of external sources; merging items from other sources into it
+      // would either widen the layer or narrow the items, so they get their own layer
+      (typeName === 'externalEvent' &&
+        !externalEventSourceScopesEqual(layer.filter.externalEvent?.external_sources, metadata?.externalSources))
     ) {
       // Add to existing row
       const { layer: newLayer, yAxis } = getUpdatedLayerWithFilters(

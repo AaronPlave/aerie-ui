@@ -164,6 +164,23 @@
                 "$ref": "#/definitions/dynamicFilter"
               },
               "type": "array"
+            },
+            "external_sources": {
+              "description": "External sources (a source key within a derivation group) this layer is restricted to. Absent or empty: events from any linked source",
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "derivation_group_name": {
+                    "type": "string"
+                  },
+                  "source_key": {
+                    "type": "string"
+                  }
+                },
+                "required": ["derivation_group_name", "source_key"],
+                "type": "object"
+              },
+              "type": "array"
             }
           }
         }

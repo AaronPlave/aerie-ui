@@ -87,6 +87,19 @@ describe('validateViewJSONAgainstSchema v4', () => {
   });
 });
 
+describe('validateViewJSONAgainstSchema v4 external event scope', () => {
+  test('Should accept an external-event layer restricted to external sources', async () => {
+    const definition = structuredClone(viewV4) as any;
+    const layer = definition.plan.timelines[0].rows
+      .flatMap((row: any) => row.layers)
+      .find((layer: any) => layer.chartType === 'externalEvent');
+    layer.filter.externalEvent.external_sources = [{ derivation_group_name: 'DG A', source_key: 'source-1' }];
+    expect(validateViewJSONAgainstSchema(definition).valid).toBe(true);
+    layer.filter.externalEvent.external_sources = [{ source_key: 'source-1' }];
+    expect(validateViewJSONAgainstSchema(definition).valid).toBe(false);
+  });
+});
+
 describe('applyViewDefinitionMigrations', () => {
   test('Should migrate a view from v0 -> v1', async () => {
     const migratedView = migrateViewDefinitionV0toV1(viewV0 as any);

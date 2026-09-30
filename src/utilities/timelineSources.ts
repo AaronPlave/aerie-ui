@@ -278,8 +278,9 @@ export type ExternalEventsSourceInput = {
 /**
  * The plan's external events, organized the way the External Events domain is: derivation groups linked to the
  * plan, their external sources, and the event types those sources contribute within the plan bounds. Adding an
- * event type creates an ordinary external-event layer; events keep their own identity (derivation group,
- * source key, type, key), so nothing here is flattened into profiles or intervals.
+ * event type creates an ordinary external-event layer restricted to that type and that external source
+ * (`ExternalEventLayerFilter.external_sources`); events keep their own identity (derivation group, source key,
+ * type, key), so nothing here is flattened into profiles or intervals.
  */
 export function createExternalEventsSource(input: ExternalEventsSourceInput): TimelineSource {
   const eventTypesByName = new Map(input.eventTypes.map(type => [type.name, type]));
@@ -313,7 +314,9 @@ export function createExternalEventsSource(input: ExternalEventsSourceInput): Ti
           children: [...byType.entries()]
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([typeName, count]) => ({
+              // The layer keeps the scope this node shows: this type, from this source key in this group.
               action: {
+                externalSources: [{ derivation_group_name: groupName, source_key: sourceKey }],
                 item: eventTypesByName.get(typeName) ?? { attribute_schema: {}, name: typeName },
                 sourceId: null,
                 typeName: 'externalEvent' as const,
@@ -322,8 +325,9 @@ export function createExternalEventsSource(input: ExternalEventsSourceInput): Ti
               id: `${EXTERNAL_EVENTS_SOURCE_ID}/${groupName}/${sourceKey}/${typeName}`,
               kind: 'item' as const,
               label: typeName,
+              tooltip: `${typeName} events from ${sourceKey} (${groupName})`,
             })),
-          emptyMessage: 'No events within the plan bounds',
+          emptyMessage: input.loading ? 'Loading…' : 'No events within the plan bounds',
           id: `${EXTERNAL_EVENTS_SOURCE_ID}/${groupName}/${sourceKey}`,
           kind: 'group' as const,
           label: sourceKey,

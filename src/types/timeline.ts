@@ -43,8 +43,17 @@ export type ActivityLayerFilter = {
   >;
 };
 
+/** One external source, identified as in the external-event domain: a source key within a derivation group. */
+export type ExternalEventSourceScope = { derivation_group_name: string; source_key: string };
+
 export type ExternalEventLayerFilter = {
   dynamic_type_filters?: DynamicFilter<Pick<typeof ExternalEventFilterField, 'Type'>>[];
+  /**
+   * Restricts the layer to events from these external sources. It narrows every other criterion: an event must
+   * come from one of the sources and match the type/attribute filters. Absent or empty: events from any linked
+   * source (the behavior of layers that predate it). On its own it selects every event from those sources.
+   */
+  external_sources?: ExternalEventSourceScope[];
   other_filters?: DynamicFilter<Pick<typeof ExternalEventFilterField, 'Attribute' | 'Name'>>[];
   static_types?: string[];
   type_subfilters?: Record<string, DynamicFilter<Pick<typeof ExternalEventFilterField, 'Attribute' | 'Name'>>[]>;
@@ -315,6 +324,8 @@ export interface XRangePoint extends Point {
 export type TimelineItemType = ResourceType | ActivityType | ExternalEventType;
 
 export type TimelineItemMetadata = {
+  /** External events only: restrict the layer to these external sources (see ExternalEventLayerFilter). */
+  externalSources?: ExternalEventSourceScope[];
   selectedFilters?: Record<string, TimelineItemListFilterOption>;
   /**
    * Set when the items come from the Sources browser: the source the new layer binds to (null for items that

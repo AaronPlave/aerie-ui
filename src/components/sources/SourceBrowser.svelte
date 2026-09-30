@@ -10,7 +10,12 @@
   import { view, viewAddFilterToRow } from '../../stores/views';
   import type { User } from '../../types/app';
   import type { Layer, Row, TimelineItemMetadata } from '../../types/timeline';
-  import type { SourceBrowserAction, SourceBrowserNode, TimelineSourceRegistry } from '../../types/timelineSource';
+  import type {
+    SourceBrowserAction,
+    SourceBrowserNode,
+    TimelineSource,
+    TimelineSourceRegistry,
+  } from '../../types/timelineSource';
   import { filterSourceBrowserNodes, getSource } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import ExternalDatasetUpload from '../ExternalDatasetUpload.svelte';
@@ -49,7 +54,11 @@
       return {
         badge: flattened || group === 'Plan' ? sources[0]?.description : `${sources.length}`,
         children,
-        emptyMessage: registry.loading ? 'Loading…' : (EMPTY_GROUP_MESSAGES[group] ?? 'Nothing available'),
+        // Each group reports its own loading state, so an empty group is never shown as empty while it loads.
+        emptyMessage:
+          registry.loading || sources.some(isSourceLoading)
+            ? 'Loading…'
+            : (EMPTY_GROUP_MESSAGES[group] ?? 'Nothing available'),
         id: `group:${group}`,
         kind: 'group',
         label: group,
@@ -57,8 +66,13 @@
     });
   }
 
+  function isSourceLoading(source: TimelineSource): boolean {
+    return !!(source.events?.loading || source.intervals?.loading || source.resources?.loading);
+  }
+
   function getMetadata(action: SourceBrowserAction): TimelineItemMetadata {
     return {
+      ...(action.externalSources ? { externalSources: action.externalSources } : {}),
       sourceId: action.sourceId,
       sourceLabel: action.sourceId ? getSource($timelineSources, action.sourceId)?.label : undefined,
     };
