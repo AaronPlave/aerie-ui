@@ -21,6 +21,7 @@
   const GROUP_ORDER = ['Plan', 'External Datasets', 'External Events'];
   const EMPTY_GROUP_MESSAGES: Record<string, string> = {
     'External Datasets': 'No external datasets are attached to this plan',
+    'External Events': 'No derivation groups are linked to this plan',
   };
 
   let expanded: Record<string, boolean> = {};
@@ -34,19 +35,19 @@
     return GROUP_ORDER.map(group => {
       const sources = registry.sources.filter(source => source.group === group);
       // A group holding a single source of the same name shows that source's contents directly.
-      const children: SourceBrowserNode[] =
-        sources.length === 1 && sources[0].label === group
-          ? sources[0].browserNodes
-          : sources.map(source => ({
-              children: source.browserNodes,
-              emptyMessage: source.resources ? 'No resources' : 'No data',
-              id: `source:${source.id}`,
-              kind: 'source',
-              label: source.label,
-              tooltip: source.description,
-            }));
+      const flattened = sources.length === 1 && sources[0].label === group;
+      const children: SourceBrowserNode[] = flattened
+        ? sources[0].browserNodes
+        : sources.map(source => ({
+            children: source.browserNodes,
+            emptyMessage: source.resources ? 'No resources' : 'No data',
+            id: `source:${source.id}`,
+            kind: 'source',
+            label: source.label,
+            tooltip: source.description,
+          }));
       return {
-        badge: sources.length === 1 ? sources[0].description : `${sources.length}`,
+        badge: flattened || group === 'Plan' ? sources[0]?.description : `${sources.length}`,
         children,
         emptyMessage: registry.loading ? 'Loading…' : (EMPTY_GROUP_MESSAGES[group] ?? 'Nothing available'),
         id: `group:${group}`,
