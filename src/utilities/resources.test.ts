@@ -267,4 +267,24 @@ describe('sampleProfiles', () => {
     expect(result[0].name).toEqual('a');
     expect(result[1].name).toEqual('b');
   });
+
+  test('Real profile gaps with null dynamics (as Merlin writes them) sample to null values', () => {
+    const profile: Profile = {
+      ...realProfile('03:00:00', [
+        { initial: 1, rate: 0, start_offset: '00:00:00' },
+        { initial: 0, rate: 0, start_offset: '02:00:00' },
+      ]),
+    };
+    profile.profile_segments.splice(1, 0, makeSegment('01:00:00', null, true));
+    const [resource] = sampleProfiles([profile], START);
+    const hourMs = 60 * 60 * 1000;
+    expect(resource.values).toEqual([
+      { is_gap: false, x: startMs, y: 1 },
+      { is_gap: false, x: startMs + hourMs, y: 1 },
+      { is_gap: true, x: startMs + hourMs, y: null },
+      { is_gap: true, x: startMs + 2 * hourMs, y: null },
+      { is_gap: false, x: startMs + 2 * hourMs, y: 0 },
+      { is_gap: false, x: startMs + 3 * hourMs, y: 0 },
+    ]);
+  });
 });
