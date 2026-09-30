@@ -19,6 +19,7 @@ import {
   isLineLayer,
   isXRangeLayer,
 } from './timeline';
+import { PLAN_SOURCE_ID } from './timelineSources';
 
 /**
  * Generates a default generic UI view.
@@ -68,7 +69,7 @@ export function generateDefaultView(
 
   // Generate a Resource row for up to the limit specified by ViewTimelineResourceRowsLimit
   resourceTypes.slice(0, ViewTimelineResourceRowsLimit).map(resourceType => {
-    const { layer, yAxis } = createTimelineResourceLayer(timelines, resourceType);
+    const { layer, yAxis } = createTimelineResourceLayer(timelines, resourceType, PLAN_SOURCE_ID);
     const layers = layer ? [layer] : [];
     const resourceRow = createRow(timelines, {
       autoAdjustHeight: false,

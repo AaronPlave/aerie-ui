@@ -107,3 +107,23 @@ describe('external event source scope', () => {
     );
   });
 });
+
+describe('new resource layers are source-bound', () => {
+  const timelines = [{ id: 0, marginLeft: 0, marginRight: 0, rows: [], verticalGuides: [] }] as Timeline[];
+  const soc = { name: '/battery/soc', schema: { type: 'real' as const } };
+
+  test('a Plan catalog (Model Resources) item binds to the Plan simulation', () => {
+    const { layer } = getUpdatedLayerWithFilters(timelines, 'resource', [soc], {});
+    expect(layer).toMatchObject({ chartType: 'line', filter: { resource: '/battery/soc' }, sourceId: 'plan' });
+    expect(JSON.parse(JSON.stringify(layer)).sourceId).toBe('plan');
+  });
+
+  test('a Sources item keeps the source it came from', () => {
+    const { layer, yAxis } = getUpdatedLayerWithFilters(timelines, 'resource', [soc], {
+      sourceId: 'external-dataset:50',
+      sourceLabel: 'Dataset 50',
+    });
+    expect(layer.sourceId).toBe('external-dataset:50');
+    expect(yAxis?.label.text).toBe('/battery/soc · Dataset 50');
+  });
+});

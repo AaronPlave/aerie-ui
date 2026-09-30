@@ -644,10 +644,12 @@ export function getUpdatedLayerWithFilters(
         }),
       };
     } else {
+      // New resource layers always name their source; Plan catalog items (no source given) read the Plan's
+      // simulation. Unbound layers only exist in views saved before sources and keep the legacy lookup there.
       const { layer: newLayer, yAxis } = createTimelineResourceLayer(
         timelines,
         items[0] as ResourceType,
-        sourceId,
+        sourceId ?? PLAN_SOURCE_ID,
         metadata?.sourceLabel,
       );
       if (newLayer && newLayer.filter.resource) {

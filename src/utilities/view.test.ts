@@ -70,6 +70,10 @@ describe('generateDefaultViewWithEvents', () => {
     expect(layers.length).toBe(1);
     expect(layers[0].filter.externalEvent).toBeDefined();
     expect(layers[0].filter.externalEvent?.static_types).toEqual(['external-event-type_1', 'external-event-type_2']);
+
+    // Generated resource layers read the Plan's simulation explicitly; they are new content, not legacy layers.
+    const resourceLayers = timelines[0].rows.flatMap(row => row.layers).filter(layer => layer.filter.resource);
+    resourceLayers.forEach(layer => expect(layer.sourceId).toBe('plan'));
   });
 });
 

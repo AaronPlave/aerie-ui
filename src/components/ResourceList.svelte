@@ -2,8 +2,8 @@
 
 <!--
   Resource types declared by the plan's mission model (Plan catalog). Actual resource data, including profiles
-  from external datasets, is browsed under Sources. Layers created here keep the unbound (legacy) resource
-  lookup, so they behave exactly like layers created before sources existed.
+  from external datasets, is browsed under Sources. Layers created here are bound to the Plan's simulation
+  (see getUpdatedLayerWithFilters).
 -->
 <script lang="ts">
   import { resourceTypes, resourceTypesLoading } from '../stores/simulation';

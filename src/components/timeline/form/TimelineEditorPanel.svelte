@@ -73,7 +73,7 @@
     isXRangeLayer,
     rebindResourceLayer,
   } from '../../../utilities/timeline';
-  import { findResourceType, getSource } from '../../../utilities/timelineSources';
+  import { findResourceType, getSource, PLAN_SOURCE_ID } from '../../../utilities/timelineSources';
   import { tooltip } from '../../../utilities/tooltip';
   import ColorPicker from '../../form/ColorPicker.svelte';
   import Input from '../../form/Input.svelte';
@@ -198,10 +198,11 @@
   // TODO move to a util?
   function createTimelineLayer(chartType: Layer['chartType']): Layer {
     switch (chartType) {
+      // New resource layers read the Plan's simulation until another source is chosen
       case 'line':
-        return createTimelineLineLayer(timelines, yAxes);
+        return createTimelineLineLayer(timelines, yAxes, { sourceId: PLAN_SOURCE_ID });
       case 'x-range':
-        return createTimelineXRangeLayer(timelines, yAxes);
+        return createTimelineXRangeLayer(timelines, yAxes, { sourceId: PLAN_SOURCE_ID });
       case 'externalEvent':
         return createTimelineExternalEventLayer(timelines);
       default:

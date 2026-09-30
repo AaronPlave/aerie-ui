@@ -83,9 +83,12 @@
   $: resourceSources = $timelineSources.sources.filter(source => source.resources);
   $: intervalSources = $timelineSources.sources.filter(source => source.intervals);
   $: layerSource = getSource($timelineSources, layer.sourceId);
-  $: resourceSourceOptions = getSourceOptions(resourceSources, layer.sourceId, [
-    { label: 'Any (simulation, then attached datasets)', value: '' },
-  ]);
+  // The unbound lookup is only offered to layers that already use it (views saved before sources existed).
+  $: resourceSourceOptions = getSourceOptions(
+    resourceSources,
+    layer.sourceId,
+    layer.sourceId ? [] : [{ label: 'Any (legacy: simulation, then attached datasets)', value: '' }],
+  );
   $: activitySourceId = resolveActivityLayerSourceId(layer);
   $: activitySourceOptions = getSourceOptions(intervalSources, activitySourceId, []);
   // A source-bound layer offers only its source's catalog; an unbound layer offers the legacy namespace.
