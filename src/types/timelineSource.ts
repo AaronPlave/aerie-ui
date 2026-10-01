@@ -19,9 +19,21 @@ import type { ExternalEventSourceScope, TimelineItemType } from './timeline';
  */
 export type TimelineSourceId = string;
 
-export type TimelineSourceKind = 'plan' | 'externalDataset' | 'externalEvents';
+export type TimelineSourceKind = 'plan' | 'externalDataset' | 'externalEvents' | 'imported';
+
+/** The time window a row shows (ms since the Unix epoch) and how many pixels wide it is drawn. */
+export type TimelineViewport = {
+  end: number;
+  pixels: number;
+  start: number;
+};
 
 export type TimelineResourceSubscription = {
+  /**
+   * Present on sources too large to load whole: the row reports what it shows, and the subscription serves
+   * a bounded representation of that window instead of the entire resource.
+   */
+  setViewport?: (viewport: TimelineViewport) => void;
   store: Readable<TimelineResourceState>;
   unsubscribe: () => void;
 };

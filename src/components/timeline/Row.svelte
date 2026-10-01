@@ -328,6 +328,7 @@
             // can tell "/battery/soc" from one source apart from the same name in another.
             resource: resource && request.sourceId ? { ...resource, sourceId: request.sourceId } : resource,
             revisionKey: request.revisionKey,
+            setViewport: subscription.setViewport,
             type: request.type,
             unavailable: request.unavailable,
             unsubscribe: () => {
@@ -338,6 +339,12 @@
         };
       });
     });
+  }
+
+  // Viewport-driven sources serve what the row shows; they coalesce rapid changes themselves.
+  $: if (drawWidth > 0 && viewTimeRange.end > viewTimeRange.start) {
+    const viewport = { end: viewTimeRange.end, pixels: drawWidth, start: viewTimeRange.start };
+    Object.values(resourceRequestMap).forEach(request => request.setViewport?.(viewport));
   }
 
   onDestroy(() => {

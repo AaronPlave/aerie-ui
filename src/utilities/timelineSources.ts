@@ -3,6 +3,7 @@ import type { TimelineResourceState } from '../stores/timelineResourceStatus';
 import type { ActivityType } from '../types/activity';
 import type { ExternalEvent, ExternalEventType } from '../types/external-event';
 import type { DerivationGroup, PlanDerivationGroup } from '../types/external-source';
+import type { PlanSource, SourceResource } from '../types/importedSource';
 import type { PlanDataset, Profile, ResourceType, SimulationDataset, Span } from '../types/simulation';
 import type { Layer } from '../types/timeline';
 import type {
@@ -19,10 +20,19 @@ import type {
 export const PLAN_SOURCE_ID: TimelineSourceId = 'plan';
 export const EXTERNAL_EVENTS_SOURCE_ID: TimelineSourceId = 'external-events';
 const EXTERNAL_DATASET_SOURCE_PREFIX = 'external-dataset:';
+const IMPORTED_SOURCE_PREFIX = 'imported:';
 
 /** A plan_dataset is identified by (plan, dataset); within one plan's registry the dataset id is enough. */
 export function getExternalDatasetSourceId(datasetId: number): TimelineSourceId {
   return `${EXTERNAL_DATASET_SOURCE_PREFIX}${datasetId}`;
+}
+
+/**
+ * An imported source as one plan uses it. The id is the plan_source binding, never the revision's storage, so
+ * a saved view keeps working however the revision's data is stored.
+ */
+export function getImportedSourceId(planSourceId: number): TimelineSourceId {
+  return `${IMPORTED_SOURCE_PREFIX}${planSourceId}`;
 }
 
 /** The external profile a legacy (unbound) resource name resolves to, and the plan_dataset row it comes from. */
@@ -372,6 +382,90 @@ export function createExternalDatasetSources(input: ExternalDatasetSourcesInput)
         },
       };
     });
+}
+
+export type ImportedSourcesInput = {
+  planSources: PlanSource[];
+  subscribeImported: (
+    planSource: PlanSource,
+    resource: SourceResource,
+    context: TimelineResourceSubscriptionContext,
+  ) => TimelineResourceSubscription;
+};
+
+/**
+ * One source per imported revision the plan uses (plan_source). Resources are grouped by the source's own
+ * category (a TOL's subsystem). The catalog is browseable as soon as ingest starts; data once it is published.
+ */
+export function createImportedSources(input: ImportedSourcesInput): TimelineSource[] {
+  return input.planSources.map(planSource => {
+    const sourceId = getImportedSourceId(planSource.id);
+    const revision = planSource.source_revision;
+    const resources = new Map(revision.resources.map(resource => [resource.key, resource]));
+    const catalog: ResourceType[] = revision.resources.map(resource => ({
+      name: resource.key,
+      schema: resource.schema,
+    }));
+    const byCategory = new Map<string, SourceResource[]>();
+    revision.resources.forEach(resource => {
+      const category = resource.category ?? 'Uncategorized';
+      byCategory.set(category, [...(byCategory.get(category) ?? []), resource]);
+    });
+    const ready = revision.status === 'success';
+    const unavailableReason = ready
+      ? undefined
+      : revision.status === 'failed'
+        ? 'The import failed'
+        : 'The source is still being imported';
+    return {
+      browserNodes: [...byCategory.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([category, members]) => ({
+          badge: `${members.length}`,
+          children: members.map(resource => ({
+            action: {
+              item: { name: resource.key, schema: resource.schema },
+              sourceId,
+              typeName: 'resource' as const,
+            },
+            id: `${sourceId}/resource/${resource.key}`,
+            kind: 'item' as const,
+            label: resource.key,
+            tags: [resource.schema.type],
+            tooltip: [resource.units, resource.sample_count !== null ? `${resource.sample_count} samples` : null]
+              .filter(Boolean)
+              .join(' · '),
+          })),
+          id: `${sourceId}/category/${category}`,
+          kind: 'group' as const,
+          label: category,
+        })),
+      description: ready
+        ? `Revision ${revision.id} · ${revision.coverage_start ?? '?'} – ${revision.coverage_end ?? '?'}`
+        : `Revision ${revision.id} · ${revision.status}`,
+      group: 'Imported Sources',
+      id: sourceId,
+      kind: 'imported' as const,
+      label: planSource.label ?? revision.source.name,
+      resources: {
+        catalog,
+        loading: false,
+        revisionKey: ready ? `source-revision:${revision.id}` : null,
+        subscribe: (name: string, context: TimelineResourceSubscriptionContext) => {
+          const resource = resources.get(name);
+          if (!ready || !resource) {
+            return createStaticResourceSubscription({
+              error: unavailableReason ?? `Resource not found in ${revision.source.name}`,
+              loading: false,
+              resource: null,
+            });
+          }
+          return input.subscribeImported(planSource, resource, context);
+        },
+        unavailableReason,
+      },
+    };
+  });
 }
 
 export type ExternalEventsSourceInput = {

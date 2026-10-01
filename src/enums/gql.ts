@@ -175,6 +175,7 @@ export enum Queries {
   PLANS = 'plan',
   PLAN_DATASETS = 'plan_dataset',
   PLAN_SNAPSHOTS = 'plan_snapshot',
+  PLAN_SOURCES = 'plan_source',
   PLAN_SNAPSHOT_ACTIVITIES = 'plan_snapshot_activities',
   PROFILES = 'profile',
   RESOURCE_TYPES = 'resource_type',

@@ -289,6 +289,7 @@ import {
 } from './modal';
 import { featurePermissions, gatewayPermissions, queryPermissions } from './permissions';
 import { reqActionServer, reqExtension, reqGateway, reqHasura, WorkspaceSaveConflictError } from './requests';
+import type { SourceQuery, SourceQueryResult } from './importedResource';
 import { convertResponseToMetadata } from './scheduling';
 import { buildSearchActivitiesWhereClauses, type ActivitySearchFilters } from './searchFilters';
 import { compareEvents } from './simulation';
@@ -6607,6 +6608,27 @@ const effects = {
       showFailureToast('Resolve Merge Request Conflict Failed');
       catchError('log', 'Resolve Merge Request Conflict Failed', e as Error);
     }
+  },
+
+  /**
+   * Bounded samples of imported resources over [query.start, query.end) (microseconds since the Unix epoch).
+   * Display queries return at most query.pointBudget points per resource; see the gateway's /sources/query.
+   */
+  async querySourceResources(
+    planSourceId: number,
+    resources: string[],
+    query: SourceQuery,
+    user: User | null,
+    signal?: AbortSignal,
+  ): Promise<{ results: SourceQueryResult[] }> {
+    return reqGateway(
+      '/sources/query',
+      'POST',
+      JSON.stringify({ planSourceId, resources, ...query }),
+      user,
+      false,
+      signal,
+    );
   },
 
   async removePresetFromActivityDirective(

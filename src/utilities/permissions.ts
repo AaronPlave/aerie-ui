@@ -992,6 +992,7 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   SUB_PLAN_SNAPSHOTS: (user: User | null): boolean => {
     return isUserAdmin(user) || getPermission([Queries.PLAN_SNAPSHOTS], user);
   },
+  SUB_PLAN_SOURCES: () => true,
   SUB_PLAN_TAGS: () => true,
   SUB_SCHEDULING_CONDITION: () => true,
   SUB_SCHEDULING_CONDITIONS: (user: User | null): boolean => {

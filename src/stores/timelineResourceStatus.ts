@@ -10,7 +10,8 @@ import type { Resource } from '../types/simulation';
 
 // 'external' entries are keyed on the simulation_dataset id the legacy name lookup is scoped to;
 // 'externalDataset' entries (source-bound layers) on the merlin.dataset id of one plan_dataset.
-export type TimelineResourceKind = 'sim' | 'external' | 'externalDataset';
+// 'imported' entries (imported source layers) on the plan_source id.
+export type TimelineResourceKind = 'sim' | 'external' | 'externalDataset' | 'imported';
 
 export type TimelineResourceState = {
   error: string;

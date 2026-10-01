@@ -1,4 +1,4 @@
-import type { TimelineSourceId } from './timelineSource';
+import type { TimelineSourceId, TimelineViewport } from './timelineSource';
 import type { ActivityDirectiveId } from './activity';
 import type { UserId } from './app';
 import type { ConsoleEntry } from './console';
@@ -53,6 +53,8 @@ export type ResourceRequest = {
   resource: Resource | null;
   /** The data revision the request was made against; the request restarts when it changes. */
   revisionKey: string;
+  /** Viewport-driven sources only: tells the request what the row currently shows. */
+  setViewport?: (viewport: TimelineViewport) => void;
   type: 'internal' | 'external' | 'source';
   /** The layer's source is not available; `error` says why. */
   unavailable?: boolean;

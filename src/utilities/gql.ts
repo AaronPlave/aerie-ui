@@ -3013,6 +3013,38 @@ const gql = {
     }
   `,
 
+  SUB_PLAN_SOURCES: `#graphql
+    subscription SubPlanSources($planId: Int!) {
+      ${Queries.PLAN_SOURCES}(where: { plan_id: { _eq: $planId } }, order_by: { id: asc }) {
+        id
+        label
+        source_revision {
+          coverage_end
+          coverage_start
+          id
+          progress
+          resources(order_by: { key: asc }) {
+            category
+            coverage_end
+            coverage_start
+            interpolation
+            key
+            numeric
+            sample_count
+            schema
+            units
+          }
+          source {
+            id
+            name
+            source_type
+          }
+          status
+        }
+      }
+    }
+  `,
+
   SUB_PLAN_TAGS: `#graphql
     subscription SubPlanTags($planId: Int!) {
       plan: ${Queries.PLAN}(id: $planId) {

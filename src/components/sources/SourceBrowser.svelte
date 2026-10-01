@@ -23,10 +23,11 @@
 
   export let user: User | null;
 
-  const GROUP_ORDER = ['Plan', 'External Datasets', 'External Events'];
+  const GROUP_ORDER = ['Plan', 'External Datasets', 'External Events', 'Imported Sources'];
   const EMPTY_GROUP_MESSAGES: Record<string, string> = {
     'External Datasets': 'No external datasets are attached to this plan',
     'External Events': 'No derivation groups are linked to this plan',
+    'Imported Sources': 'No imported sources are attached to this plan',
   };
 
   let expanded: Record<string, boolean> = {};
