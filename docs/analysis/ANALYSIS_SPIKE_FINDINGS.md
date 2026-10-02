@@ -115,6 +115,7 @@ Its rows hold imported battery resources, imported DSN passes, downlinks and sci
   - telling apart two simulations from the same plan.
 - **Autosave.**
   - It is quiet and works for one user.
+  - Panning and zooming are not edits, so they never save. Saving on every pan made the header flicker and set off conflicts between people only looking. Saves caused by real edits record the time window shown at that moment.
   - Two clients on the same analysis conflict. The second save is refused, with "Changed elsewhere, not saving" and Reload. Without that refusal it silently overwrote the other client's rows.
 
 ## Recommended next refactors

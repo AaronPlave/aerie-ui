@@ -232,11 +232,14 @@ async function save() {
 
 const saveSoon = debounce(save, 1000);
 
-/** Saves the analysis whenever its sources, view or time range change. Returns the function that stops it. */
+/**
+ * Saves the analysis whenever its sources or view change. Returns the function that stops it. Panning and zooming
+ * are not edits: they never save by themselves, but each save records the time window shown at that moment.
+ */
 export function autosaveAnalysis(user: User | null): () => void {
   saveUser = user;
   let first = true;
-  const unsubscribe = derived([analysisSourceBindings, view, viewTimeRange], values => values).subscribe(() => {
+  const unsubscribe = derived([analysisSourceBindings, view], values => values).subscribe(() => {
     if (first) {
       first = false;
       return;
