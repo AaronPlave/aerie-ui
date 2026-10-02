@@ -1,5 +1,4 @@
 import { derived, type Readable } from 'svelte/store';
-import type { User } from '../types/app';
 import type { PlanSource } from '../types/importedSource';
 import type { ResourceType } from '../types/simulation';
 import type { TimelineSourceRegistry } from '../types/timelineSource';
@@ -18,11 +17,7 @@ import {
   planDerivationGroupLinks,
 } from './external-source';
 import { createExternalResourceSubscription } from './externalResource';
-import {
-  createBatchedSourceQuery,
-  createImportedResourceSubscription,
-  type ImportedResourceQuery,
-} from './importedResource';
+import { createImportedResourceSubscription, getSourceQuery } from './importedResource';
 import { planDatasets, planId, planModelActivityTypes } from './plan';
 import { createProfileSubscription } from './profile';
 import { resourceTypes, simulationDataset, simulationDatasetId, spans } from './simulation';
@@ -119,18 +114,6 @@ const externalEventsSource = derived(
 
 /** Imported revisions the plan uses, with their resource catalogs. */
 export const planSources = gqlSubscribable<PlanSource[]>(gql.SUB_PLAN_SOURCES, { planId }, []);
-
-// One batching query function per (plan source, user), so every row's requests for a viewport share a request.
-const sourceQueries = new Map<string, ImportedResourceQuery>();
-function getSourceQuery(planSourceId: number, user: User | null): ImportedResourceQuery {
-  const key = `${planSourceId}:${user?.token ?? ''}:${user?.activeRole ?? ''}`;
-  let query = sourceQueries.get(key);
-  if (!query) {
-    query = createBatchedSourceQuery(planSourceId, user);
-    sourceQueries.set(key, query);
-  }
-  return query;
-}
 
 const importedSources = derived(planSources, $planSources =>
   createImportedSources({

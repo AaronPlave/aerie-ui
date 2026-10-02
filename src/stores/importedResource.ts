@@ -271,3 +271,23 @@ export function createBatchedSourceQuery(planSourceId: number, user: User | null
       }
     });
 }
+
+const sourceQueries = new WeakMap<User, Map<number, ImportedResourceQuery>>();
+/**
+ * The batching query function for one plan source and session, shared so every row's requests for a viewport share
+ * a request. Held per user object, which is replaced on login and on role change: a new session never joins a batch
+ * of the old one, and the old session's functions, and its token, are collected with it.
+ */
+export function getSourceQuery(planSourceId: number, user: User | null): ImportedResourceQuery {
+  if (!user) {
+    return createBatchedSourceQuery(planSourceId, null);
+  }
+  const byPlanSource = sourceQueries.get(user) ?? new Map<number, ImportedResourceQuery>();
+  sourceQueries.set(user, byPlanSource);
+  let query = byPlanSource.get(planSourceId);
+  if (!query) {
+    query = createBatchedSourceQuery(planSourceId, user);
+    byPlanSource.set(planSourceId, query);
+  }
+  return query;
+}
