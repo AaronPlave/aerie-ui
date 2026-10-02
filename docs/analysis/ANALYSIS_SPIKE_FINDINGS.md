@@ -15,7 +15,6 @@ Its rows hold imported battery resources, imported DSN passes, downlinks and sci
 - **Analysis record.** `ui.analysis(id, name, owner, definition jsonb, …)`. The definition holds:
 
   - `sources`: slot bindings `source-N`, each pointing to an imported revision or a simulation dataset;
-  - `timeRange`;
   - `view`: the existing `ViewDefinition`.
 
   Layers store only the slot id (`sourceId`). So rebinding slot `source-1` to a new revision needs no view edits, and sources are referenced, never copied.
@@ -115,7 +114,7 @@ Its rows hold imported battery resources, imported DSN passes, downlinks and sci
   - telling apart two simulations from the same plan.
 - **Autosave.**
   - It is quiet and works for one user.
-  - Panning and zooming are not edits, so they never save. Saving on every pan made the header flicker and set off conflicts between people only looking. Saves caused by real edits record the time window shown at that moment.
+  - The time window is not saved. Saving it on every pan made the header flicker and set off conflicts between people only looking, and saving it only with other edits would restore an arbitrary window. An analysis opens on its sources' range (the simulations', else everything loaded).
   - Two clients on the same analysis conflict. The second save is refused, with "Changed elsewhere, not saving" and Reload. Without that refusal it silently overwrote the other client's rows.
 
 ## Recommended next refactors

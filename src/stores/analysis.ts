@@ -150,7 +150,8 @@ export async function openAnalysis(initial: Analysis, user: User | null) {
   });
   analysisSaveStatus.set('saved');
   const ranges = await loadSourceDetails(initial.definition.sources, user);
-  viewTimeRange.set(initial.definition.timeRange ?? ranges?.initial ?? { end: Date.now(), start: Date.now() - 864e5 });
+  // The time window is not saved: an analysis opens on its sources' range.
+  viewTimeRange.set(ranges?.initial ?? { end: Date.now(), start: Date.now() - 864e5 });
 }
 
 export function closeAnalysis() {
@@ -215,7 +216,6 @@ async function save() {
   analysisSaveStatus.set('saving');
   const definition = {
     sources: get(analysisSourceBindings),
-    timeRange: get(viewTimeRange),
     version: 1 as const,
     view: currentView.definition,
   };
@@ -232,10 +232,7 @@ async function save() {
 
 const saveSoon = debounce(save, 1000);
 
-/**
- * Saves the analysis whenever its sources or view change. Returns the function that stops it. Panning and zooming
- * are not edits: they never save by themselves, but each save records the time window shown at that moment.
- */
+/** Saves the analysis whenever its sources or view change. Returns the function that stops it. */
 export function autosaveAnalysis(user: User | null): () => void {
   saveUser = user;
   let first = true;

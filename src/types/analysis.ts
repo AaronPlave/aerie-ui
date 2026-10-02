@@ -2,7 +2,6 @@ import type { ActivityType } from './activity';
 import type { UserId } from './app';
 import type { SourceResource } from './importedSource';
 import type { ValueSchema } from './schema';
-import type { TimeRange } from './timeline';
 import type { TimelineSourceId } from './timelineSource';
 import type { ViewDefinition } from './view';
 
@@ -19,8 +18,6 @@ export type AnalysisSourceBinding = AnalysisSourceTarget & { id: TimelineSourceI
 
 export type AnalysisDefinition = {
   sources: AnalysisSourceBinding[];
-  /** The time window last shown, so reopening the analysis returns to it. */
-  timeRange?: TimeRange;
   version: 1;
   /** The existing view definition shape; an analysis uses its timeline, not its plan tables or grid. */
   view: ViewDefinition;

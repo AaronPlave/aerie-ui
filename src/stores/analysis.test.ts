@@ -104,7 +104,6 @@ function definitionWithRows(): AnalysisDefinition {
     { id: 'source-1', kind: 'imported', revisionId: 18 },
     { id: 'source-2', kind: 'simulation', simulationDatasetId: 1 },
   ];
-  definition.timeRange = { end: 2, start: 1 };
   return definition;
 }
 
@@ -125,14 +124,17 @@ describe('analysis store', () => {
     vi.useRealTimers();
   });
 
-  it('restores a saved analysis: its source bindings, rows and time window', async () => {
+  it("restores a saved analysis: its source bindings and rows, opening on its sources' time range", async () => {
     await openAnalysis(savedAnalysis(definitionWithRows()), user);
     expect(get(analysisSourceBindings).map(binding => binding.id)).toEqual(['source-1', 'source-2']);
     expect(get(view)?.definition.plan.timelines[0].rows.map(row => row.layers.map(layer => layer.sourceId))).toEqual([
       ['source-1'],
       ['source-1', 'source-2'],
     ]);
-    expect(get(viewTimeRange)).toEqual({ end: 2, start: 1 });
+    expect(get(viewTimeRange)).toEqual({
+      end: Date.parse(simulation.simulation_end_time),
+      start: Date.parse(simulation.simulation_start_time),
+    });
     // Every saved layer finds its source again, by the id it stored.
     const registry = get(analysisTimelineSources);
     expect(registry.sources.map(source => source.id)).toEqual(['source-1', 'source-2']);
