@@ -469,8 +469,10 @@
     ),
   ];
   // Rows showing activities of more than one source label each source's groups with the source.
+  // Grouped rows label each group with its source when the row mixes sources or reads one other than the Plan
+  // (the header's source caption is not shown above a group tree).
   $: activityGroupSourceLabels =
-    new Set(activityLayers.map(layer => resolveActivityLayerSourceId(layer))).size > 1
+    new Set(activityLayers.map(layer => resolveActivityLayerSourceId(layer))).size > 1 || activityRequests.length > 0
       ? Object.fromEntries(
           activityRequests.map(request => [
             request.sourceId,

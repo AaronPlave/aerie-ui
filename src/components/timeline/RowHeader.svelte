@@ -108,7 +108,7 @@
   }
 
   // Activities of sources other than the Plan name their sources, read live so a rebound or removed source never
-  // leaves a stale label behind (row names stay the user's).
+  // leaves a stale label behind (row names stay the user's). Grouped rows name the source on each group instead.
   $: activitySourceCaption = [
     ...new Set(
       layers
@@ -170,7 +170,7 @@
               >
                 {title}
               </div>
-              {#if activitySourceCaption && height > 36}
+              {#if activitySourceCaption && height > 36 && !discreteTree.length}
                 <div class="truncate text-[10px] text-muted-foreground">{activitySourceCaption}</div>
               {/if}
             </div>
@@ -274,7 +274,10 @@
 
   .row-header-title-button {
     flex: 1;
+    /* Grows to fit the source caption under the title. */
+    height: auto;
     justify-content: flex-start;
+    min-height: 24px;
     text-align: left;
   }
 
