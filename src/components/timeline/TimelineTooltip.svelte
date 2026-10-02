@@ -7,7 +7,7 @@
   import DirectiveIcon from '../../assets/timeline-directive.svg?raw';
   import SpanIcon from '../../assets/timeline-span.svg?raw';
   import { plugins } from '../../stores/plugins';
-  import { timelineSources } from '../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../stores/timelineSources';
   import type { ActivityDirective } from '../../types/activity';
   import type { ConstraintResultWithName } from '../../types/constraint';
   import type { ExternalEvent } from '../../types/external-event';
@@ -17,6 +17,8 @@
   import { convertUsToDurationString, formatDate, getDoyTime } from '../../utilities/time';
   import { getResourceForLayer } from '../../utilities/timeline';
   import { getSource } from '../../utilities/timelineSources';
+
+  const timelineSources = getTimelineSourcesContext();
 
   export let interpolateHoverValue: boolean = false;
   export let hidden: boolean = false;
@@ -536,15 +538,35 @@
   }
 
   function textForSpan(span: Span): string {
-    const { span_id, duration, startMs, endMs, type } = span;
+    const { span_id, startMs, endMs, type } = span;
     const spanStartTime = formatDate(new Date(startMs), $plugins.time.primary.format);
     const spanEndTime = formatDate(new Date(endMs), $plugins.time.primary.format);
+    // Activities from a source other than the Plan name their source; their id is only unique within it.
+    const sourceLabel = span.sourceId ? (getSource($timelineSources, span.sourceId)?.label ?? span.sourceId) : null;
+    const duration = sourceLabel ? convertUsToDurationString(span.durationMs * 1000) || '0s' : span.duration;
+    const id = span.sourceActivityId ?? span_id;
     return `
       <div class='tooltip-row-container'>
-        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} Simulated Activity (Span)</div>
+        <div class='st-typography-bold' style='color: var(--st-gray-10); display: flex; gap: 4px;'>${SpanIcon} ${sourceLabel ? 'Activity' : 'Simulated Activity (Span)'}</div>
+        ${
+          sourceLabel
+            ? `<div class='tooltip-row'>
+                <span>Source:</span>
+                <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(sourceLabel)}</span>
+              </div>`
+            : ''
+        }
+        ${
+          span.name && span.name !== type
+            ? `<div class='tooltip-row'>
+                <span>Name:</span>
+                <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(span.name)}</span>
+              </div>`
+            : ''
+        }
         <div class='tooltip-row'>
           <span>Type:</span>
-          <span class='tooltip-value-highlight st-typography-medium'>${type}</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${escapeHtml(type)}</span>
         </div>
         <div class='tooltip-row'>
           <span>Start Time (${primaryTimeLabel}):</span>
@@ -589,8 +611,8 @@
           <span class='tooltip-value-highlight st-typography-medium'>${duration}</span>
         </div>
         <div class='tooltip-row'>
-          <span>Id:</span>
-          <span class='tooltip-value-highlight st-typography-medium'>${span_id}</span>
+          <span>Id${sourceLabel ? ' (in source)' : ''}:</span>
+          <span class='tooltip-value-highlight st-typography-medium'>${id}</span>
         </div>
       </div>
     `;

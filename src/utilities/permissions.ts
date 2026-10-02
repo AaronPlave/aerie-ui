@@ -3,6 +3,7 @@ import type { UserSequence } from '@nasa-jpl/plandev-sequence-languages';
 import { Queries } from '../enums/gql';
 import type { ActionDefinition, ActionRun } from '../types/actions';
 import type { ActivityDirective, ActivityPreset } from '../types/activity';
+import type { AnalysisSlim } from '../types/analysis';
 import type { User, UserRole } from '../types/app';
 import type { ReqChangeRoleResponse } from '../types/auth';
 import type { ConstraintDefinition, ConstraintMetadata, ConstraintRun } from '../types/constraint';
@@ -422,6 +423,9 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   CREATE_ACTIVITY_PRESET: (user: User | null): boolean => {
     return isUserAdmin(user) || getPermission([Queries.INSERT_ACTIVITY_PRESET], user);
   },
+  CREATE_ANALYSIS: (user: User | null): boolean => {
+    return isUserAdmin(user) || getPermission([Queries.INSERT_ANALYSIS], user);
+  },
   CREATE_CHANNEL_DICTIONARY: (user: User | null): boolean => {
     return isUserAdmin(user) || getPermission([Queries.INSERT_CHANNEL_DICTIONARY], user);
   },
@@ -591,6 +595,9 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   },
   DELETE_ACTIVITY_PRESET: (user: User | null, preset: AssetWithOwner<ActivityPreset>): boolean => {
     return isUserAdmin(user) || (getPermission([Queries.DELETE_ACTIVITY_PRESET], user) && isUserOwner(user, preset));
+  },
+  DELETE_ANALYSIS: (user: User | null, analysis: AnalysisSlim): boolean => {
+    return isUserAdmin(user) || (getPermission([Queries.DELETE_ANALYSIS], user) && isUserOwner(user, analysis));
   },
   DELETE_CHANNEL_DICTIONARY: (user: User | null): boolean => {
     return isUserAdmin(user) || getPermission([Queries.DELETE_CHANNEL_DICTIONARY], user);
@@ -769,6 +776,12 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
     return isUserAdmin(user) || (getPermission(queries, user) && getRolePlanPermission(queries, user, plan, model));
   },
   GET_ACTIVITY_DIRECTIVE_CHANGELOG: () => true,
+  GET_ANALYSIS: () => true,
+  GET_ANALYSIS_ACTIVITIES: () => true,
+  GET_ANALYSIS_ACTIVITY_COUNT: () => true,
+  GET_ANALYSIS_SIMULATION_DATASETS: () => true,
+  GET_ANALYSIS_SOURCE_OPTIONS: () => true,
+  GET_ANALYSIS_SOURCE_REVISIONS: () => true,
   GET_CONSTRAINT_PROCEDURE_EFFECTIVE_ARGUMENTS_BULK: () => true,
   GET_EFFECTIVE_ACTIVITY_ARGUMENTS_BULK: () => true,
   GET_EFFECTIVE_MODEL_ARGUMENTS: () => true,
@@ -805,6 +818,10 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   GET_SCHEDULING_SPEC_GOALS_FOR_GOAL: () => true,
   GET_SEQUENCE_ADAPTATION: () => true,
   GET_SIMULATION_DATASET_ID: () => true,
+  GET_SOURCE_ACTIVITIES: () => true,
+  GET_SOURCE_ACTIVITY: () => true,
+  GET_SOURCE_ACTIVITY_TIMES: () => true,
+  GET_SPAN: () => true,
   GET_SPANS: () => true,
   GET_TYPESCRIPT_CONSTRAINTS: () => true,
   GET_TYPESCRIPT_SCHEDULING: () => true,
@@ -946,6 +963,7 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   },
   SUB_ACTIVITY_PRESETS_ALL: () => true,
   SUB_ACTIVITY_TYPES: () => true,
+  SUB_ANALYSES: () => true,
   SUB_ANCHOR_VALIDATION_STATUS: () => true,
   SUB_CHANNEL_DICTIONARIES: () => true,
   SUB_COMMAND_DICTIONARIES: () => true,
@@ -1058,6 +1076,9 @@ const queryPermissions: Record<GQLKeys, (user: User | null, ...args: any[]) => b
   },
   UPDATE_ACTIVITY_PRESET: (user: User | null, preset: AssetWithOwner<ActivityPreset>): boolean => {
     return isUserAdmin(user) || (getPermission([Queries.UPDATE_ACTIVITY_PRESET], user) && isUserOwner(user, preset));
+  },
+  UPDATE_ANALYSIS: (user: User | null, analysis: AnalysisSlim): boolean => {
+    return isUserAdmin(user) || (getPermission([Queries.UPDATE_ANALYSIS], user) && isUserOwner(user, analysis));
   },
   UPDATE_CONSTRAINT_DEFINITION_TAGS: (
     user: User | null,
@@ -1537,6 +1558,7 @@ interface FeaturePermissions {
   actionRun: WorkspaceAssetCRUDPermission<ActionRun>;
   activityDirective: PlanAssetCRUDPermission<ActivityDirective>;
   activityPresets: PlanActivityPresetsCRUDPermission;
+  analysis: CRUDPermission<AnalysisSlim>;
   channelDictionary: CRUDPermission<void>;
   commandDictionary: CRUDPermission<void>;
   constraintRuns: ConstraintRunCRUDPermission;
@@ -1604,6 +1626,12 @@ const featurePermissions: FeaturePermissions = {
     canRead: user => queryPermissions.SUB_ACTIVITY_PRESETS(user),
     canUnassign: (user, plan) => queryPermissions.DELETE_PRESET_TO_DIRECTIVE(user, plan),
     canUpdate: (user, _plan, preset) => queryPermissions.UPDATE_ACTIVITY_PRESET(user, preset),
+  },
+  analysis: {
+    canCreate: user => queryPermissions.CREATE_ANALYSIS(user),
+    canDelete: (user, analysis) => queryPermissions.DELETE_ANALYSIS(user, analysis),
+    canRead: () => true,
+    canUpdate: (user, analysis) => queryPermissions.UPDATE_ANALYSIS(user, analysis),
   },
   channelDictionary: {
     canCreate: user => queryPermissions.CREATE_DICTIONARY(user),

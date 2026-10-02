@@ -26,7 +26,7 @@
   import { maxTimeRange, planDatasets, viewTimeRange } from '../../../stores/plan';
   import { plugins } from '../../../stores/plugins';
   import { resourceTypes, simulationDataset, yAxesWithScaleDomainsCache } from '../../../stores/simulation';
-  import { timelineSources } from '../../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../../stores/timelineSources';
   import {
     selectedRowId,
     selectedTimelineId,
@@ -52,6 +52,7 @@
     LineLayer,
     Row,
     Timeline,
+    TimeRange,
     VerticalGuide,
     XRangeLayer,
   } from '../../../types/timeline';
@@ -94,7 +95,11 @@
   import TimelineLayerEditor from './TimelineEditor/TimelineLayerEditor.svelte';
   import TimelineEditorYAxisSettings from './TimelineEditorYAxisSettings.svelte';
 
+  const timelineSources = getTimelineSourcesContext();
+
   export let gridSection: ViewGridSection;
+  /** The time guides may be placed in; the Plan's when not given. */
+  export let timeBounds: TimeRange | null = null;
 
   let horizontalGuides: HorizontalGuide[] = [];
   let editorWidth: number;
@@ -622,8 +627,8 @@
                       <Input layout="stacked" class="editor-input">
                         <DatePicker
                           name="timestamp"
-                          minDate={new Date($maxTimeRange.start)}
-                          maxDate={new Date($maxTimeRange.end)}
+                          minDate={new Date((timeBounds ?? $maxTimeRange).start)}
+                          maxDate={new Date((timeBounds ?? $maxTimeRange).end)}
                           dateString={verticalGuide.timestamp}
                           on:change={event => updateVerticalGuideTimestamp(event, verticalGuide)}
                           on:keydown={event => updateVerticalGuideTimestamp(event, verticalGuide)}

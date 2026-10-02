@@ -191,6 +191,12 @@ export type SpanDB = {
 export type Span = SpanDB & {
   durationMs: number;
   endMs: number;
+  /** Activities from a source other than the Plan: their name, if they have their own. */
+  name?: string;
+  /** Activities from a source other than the Plan: their id within that source (span_id is then a drawing id). */
+  sourceActivityId?: number;
+  /** Activities from a source other than the Plan: the source they come from. */
+  sourceId?: string;
   startMs: number;
 };
 

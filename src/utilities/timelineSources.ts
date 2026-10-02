@@ -259,7 +259,7 @@ export function createPlanSimulationSource(input: PlanSimulationSourceInput): Ti
     return input.subscribeProfile(
       simulationDataset.dataset_id,
       name,
-      simulationDataset.simulation_start_time ?? context.plan.start_time,
+      simulationDataset.simulation_start_time ?? context.plan?.start_time ?? '',
       context,
     );
   };
@@ -320,13 +320,23 @@ export function createPlanSimulationSource(input: PlanSimulationSourceInput): Ti
   };
 }
 
-function toIntervalType(name: string): ActivityType {
-  return {
-    computed_attributes_value_schema: { items: {}, type: 'struct' },
-    name,
-    parameters: {},
-    required_parameters: [],
+/**
+ * An activity type of a source with no type declarations: its name, and the parameters its instances were seen
+ * with (by JSON value type), so filters can offer them. Arrays and objects are left out, as filters skip them.
+ */
+export function toIntervalType(name: string, parameterTypes: Record<string, string> = {}): ActivityType {
+  const schemaTypes: Record<string, 'boolean' | 'real' | 'string'> = {
+    boolean: 'boolean',
+    number: 'real',
+    string: 'string',
   };
+  const parameters: ActivityType['parameters'] = {};
+  Object.entries(parameterTypes).forEach(([parameterName, valueType], order) => {
+    if (schemaTypes[valueType]) {
+      parameters[parameterName] = { order, schema: { type: schemaTypes[valueType] } };
+    }
+  });
+  return { computed_attributes_value_schema: { items: {}, type: 'struct' }, name, parameters, required_parameters: [] };
 }
 
 export type ExternalDatasetSourcesInput = {

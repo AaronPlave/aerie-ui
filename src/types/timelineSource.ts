@@ -4,7 +4,7 @@ import type { ActivityType } from './activity';
 import type { User } from './app';
 import type { ExternalEventType } from './external-event';
 import type { Plan } from './plan';
-import type { ResourceType, SimulationDataset } from './simulation';
+import type { ResourceType, SimulationDataset, Span } from './simulation';
 import type { ExternalEventSourceScope, TimelineItemType } from './timeline';
 
 /**
@@ -19,7 +19,7 @@ import type { ExternalEventSourceScope, TimelineItemType } from './timeline';
  */
 export type TimelineSourceId = string;
 
-export type TimelineSourceKind = 'plan' | 'externalDataset' | 'externalEvents' | 'imported';
+export type TimelineSourceKind = 'plan' | 'externalDataset' | 'externalEvents' | 'imported' | 'simulation';
 
 /** The time window a row shows (ms since the Unix epoch) and how many pixels wide it is drawn. */
 export type TimelineViewport = {
@@ -39,7 +39,8 @@ export type TimelineResourceSubscription = {
 };
 
 export type TimelineResourceSubscriptionContext = {
-  plan: Plan;
+  /** Null outside a plan (an Analysis). */
+  plan: Plan | null;
   simulationDataset: SimulationDataset | null;
   user: User | null;
 };
@@ -54,9 +55,32 @@ export type TimelineResourceCapability = {
   unavailableReason?: string;
 };
 
+/** What an activity layer asks a source for. Types are filtered at the source; other filters in the row. */
+export type TimelineActivityRequest = {
+  /** Null for every type. */
+  types: string[] | null;
+};
+
+export type TimelineActivityState = {
+  error: string;
+  loading: boolean;
+  /**
+   * Activities as the timeline draws them. Each carries its source and its id within that source (`sourceId`,
+   * `sourceActivityId`); `span_id` is only a drawing id, unique on the page.
+   */
+  spans: Span[];
+};
+
+export type TimelineActivitySubscription = {
+  setViewport?: (viewport: TimelineViewport) => void;
+  store: Readable<TimelineActivityState>;
+  unsubscribe: () => void;
+};
+
 /**
- * Interval (activity/span) data. Only the Plan source has it today, and it is rendered through the existing
- * directive + span path, so this capability carries the catalogs rather than the data.
+ * Activity data. The Plan's is rendered through the existing directive + span path, so for it this capability
+ * carries only the catalogs. Other sources serve their activities through `subscribe`, the way resources are
+ * served: a row asks for what a layer shows and reports its viewport.
  */
 export type TimelineIntervalCapability = {
   /** Types that can be filtered on (for the Plan, the model's activity types). */
@@ -65,6 +89,12 @@ export type TimelineIntervalCapability = {
   loading: boolean;
   /** Interval types present in the current data, with instance counts. */
   present: { count: number; name: string }[];
+  /** Identifies the data served; activity requests restart when it changes. */
+  revisionKey?: string | null;
+  subscribe?: (
+    request: TimelineActivityRequest,
+    context: TimelineResourceSubscriptionContext,
+  ) => TimelineActivitySubscription;
 };
 
 /** External events keep their own domain structure; the browser renders it through `browserNodes`. */

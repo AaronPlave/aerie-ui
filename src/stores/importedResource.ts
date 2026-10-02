@@ -13,6 +13,7 @@ import {
   type LoadedWindow,
   type SourceQuery,
   type SourceQueryResult,
+  type SourceTarget,
 } from '../utilities/importedResource';
 import {
   acquireTimelineResource,
@@ -30,9 +31,9 @@ export type ImportedResourceOptions = {
   interpolation: 'linear' | 'constant';
   key: string;
   numeric: boolean;
-  planSourceId: number;
   query: ImportedResourceQuery;
   resourceType: ResourceType;
+  target: SourceTarget;
 };
 
 /** Points in the whole-coverage overview that is drawn wherever no finer window is held. */
@@ -49,9 +50,12 @@ const CACHE_SIZE = 8;
  * replaces a newer one.
  */
 export function createImportedResourceSubscription(options: ImportedResourceOptions): TimelineResourceSubscription {
-  const { coverage, key, planSourceId, query, resourceType } = options;
-  const statusKind = 'imported';
-  acquireTimelineResource(planSourceId, key, statusKind);
+  const { coverage, key, query, resourceType, target } = options;
+  const [statusId, statusKind] =
+    'planSourceId' in target
+      ? [target.planSourceId, 'imported' as const]
+      : [target.revisionId, 'importedRevision' as const];
+  acquireTimelineResource(statusId, key, statusKind);
   const state = writable<TimelineResourceState>({ error: '', loading: true, resource: null });
 
   let overview: SourceQueryResult | null = null;
@@ -87,7 +91,7 @@ export function createImportedResourceSubscription(options: ImportedResourceOpti
           : null,
     };
     state.set(next);
-    setTimelineResourceState(planSourceId, key, statusKind, next);
+    setTimelineResourceState(statusId, key, statusKind, next);
   }
 
   async function fetchViewport() {
@@ -214,7 +218,7 @@ export function createImportedResourceSubscription(options: ImportedResourceOpti
       if (timer) {
         clearTimeout(timer);
       }
-      releaseTimelineResource(planSourceId, key, statusKind);
+      releaseTimelineResource(statusId, key, statusKind);
     },
   };
 }
@@ -225,10 +229,10 @@ const BATCH_LIMIT = 100;
 const BATCH_WINDOW_MS = 10;
 
 /**
- * A query function for one plan source that coalesces the requests made within BATCH_WINDOW_MS with the same window
- * and budget into one gateway request: every row in a view settles on the same viewport at once.
+ * A query function for one revision (or plan source) that coalesces the requests made within BATCH_WINDOW_MS with the
+ * same window and budget into one gateway request: every row in a view settles on the same viewport at once.
  */
-export function createBatchedSourceQuery(planSourceId: number, user: User | null): ImportedResourceQuery {
+export function createBatchedSourceQuery(target: SourceTarget, user: User | null): ImportedResourceQuery {
   type Pending = { key: string; reject: (e: Error) => void; resolve: (r: SourceQueryResult) => void };
   const groups = new Map<string, { pending: Pending[]; query: SourceQuery }>();
   let scheduled = false;
@@ -242,7 +246,7 @@ export function createBatchedSourceQuery(planSourceId: number, user: User | null
         const slice = pending.slice(i, i + BATCH_LIMIT);
         const keys = [...new Set(slice.map(p => p.key))];
         effects
-          .querySourceResources(planSourceId, keys, query, user)
+          .querySourceResources(target, keys, query, user)
           .then(response => {
             const byKey = new Map(response.results.map(r => [r.resource, r]));
             slice.forEach(p => {
@@ -272,22 +276,23 @@ export function createBatchedSourceQuery(planSourceId: number, user: User | null
     });
 }
 
-const sourceQueries = new WeakMap<User, Map<number, ImportedResourceQuery>>();
+const sourceQueries = new WeakMap<User, Map<string, ImportedResourceQuery>>();
 /**
- * The batching query function for one plan source and session, shared so every row's requests for a viewport share
- * a request. Held per user object, which is replaced on login and on role change: a new session never joins a batch
- * of the old one, and the old session's functions, and its token, are collected with it.
+ * The batching query function for one revision (or plan source) and session, shared so every row's requests for a
+ * viewport share a request. Held per user object, which is replaced on login and on role change: a new session never
+ * joins a batch of the old one, and the old session's functions, and its token, are collected with it.
  */
-export function getSourceQuery(planSourceId: number, user: User | null): ImportedResourceQuery {
+export function getSourceQuery(target: SourceTarget, user: User | null): ImportedResourceQuery {
   if (!user) {
-    return createBatchedSourceQuery(planSourceId, null);
+    return createBatchedSourceQuery(target, null);
   }
-  const byPlanSource = sourceQueries.get(user) ?? new Map<number, ImportedResourceQuery>();
-  sourceQueries.set(user, byPlanSource);
-  let query = byPlanSource.get(planSourceId);
+  const byTarget = sourceQueries.get(user) ?? new Map<string, ImportedResourceQuery>();
+  sourceQueries.set(user, byTarget);
+  const key = 'planSourceId' in target ? `plan-source:${target.planSourceId}` : `revision:${target.revisionId}`;
+  let query = byTarget.get(key);
   if (!query) {
-    query = createBatchedSourceQuery(planSourceId, user);
-    byPlanSource.set(planSourceId, query);
+    query = createBatchedSourceQuery(target, user);
+    byTarget.set(key, query);
   }
   return query;
 }

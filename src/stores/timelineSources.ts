@@ -1,3 +1,4 @@
+import { getContext, setContext } from 'svelte';
 import { derived, type Readable } from 'svelte/store';
 import type { PlanSource } from '../types/importedSource';
 import type { ResourceType } from '../types/simulation';
@@ -73,7 +74,7 @@ const externalDatasetSources = derived([planDatasets, simulationDatasetId], ([$p
     planDatasets: $planDatasets,
     simulationDatasetId: $simulationDatasetId,
     subscribeExternal: (datasetId, name, { plan, simulationDataset, user }) =>
-      createExternalResourceSubscription(simulationDataset?.id ?? -1, name, plan.start_time, user, datasetId),
+      createExternalResourceSubscription(simulationDataset?.id ?? -1, name, plan?.start_time ?? '', user, datasetId),
   }),
 );
 
@@ -127,9 +128,9 @@ const importedSources = derived(planSources, $planSources =>
         interpolation: resource.interpolation,
         key: resource.key,
         numeric: resource.numeric,
-        planSourceId: planSource.id,
-        query: getSourceQuery(planSource.id, user),
+        query: getSourceQuery({ planSourceId: planSource.id }, user),
         resourceType: { name: resource.key, schema: resource.schema },
+        target: { planSourceId: planSource.id },
       }),
   }),
 );
@@ -156,3 +157,18 @@ export const timelineSources: Readable<TimelineSourceRegistry> = derived(
     sources: [$planSimulationSource, ...$externalDatasetSources, $externalEventsSource, ...$importedSources],
   }),
 );
+
+const TIMELINE_SOURCES_CONTEXT = Symbol('timelineSources');
+
+/**
+ * A page that is not a Plan (an Analysis) gives the timeline components beneath it its own sources. Call during
+ * component initialization.
+ */
+export function setTimelineSourcesContext(registry: Readable<TimelineSourceRegistry>) {
+  setContext(TIMELINE_SOURCES_CONTEXT, registry);
+}
+
+/** The sources of the page this component is on: the Plan page's unless a page provided its own. */
+export function getTimelineSourcesContext(): Readable<TimelineSourceRegistry> {
+  return getContext<Readable<TimelineSourceRegistry> | undefined>(TIMELINE_SOURCES_CONTEXT) ?? timelineSources;
+}

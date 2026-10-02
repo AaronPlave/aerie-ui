@@ -564,11 +564,10 @@
             row += 1;
           } else {
             openRowSpaceFound = true;
-            const existingItemsForRow = rows[row] ? rows[row].items : [];
-            rows[row] = {
-              items: existingItemsForRow.concat(item),
-              max: maxX,
-            };
+            // Appended in place: copying the row's items per item made packing quadratic.
+            rows[row] = rows[row] ?? { items: [], max: maxX };
+            rows[row].items.push(item);
+            rows[row].max = maxX;
           }
         }
       });

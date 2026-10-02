@@ -67,7 +67,8 @@
   export let simulationDataset: SimulationDataset | null = null;
   export let spanUtilityMaps: SpanUtilityMaps;
   export let spansMap: SpansMap | null = {};
-  export let spans: Span[] | null = [];
+  /** Only counted in the histogram. */
+  export let spans: Pick<Span, 'durationMs' | 'startMs'>[] | null = [];
   export let timeline: Timeline | null = null;
   export let timelineInteractionMode: TimelineInteractionMode;
   export let timelineLockStatus: TimelineLockStatus;
@@ -401,6 +402,9 @@
         timeLabel={$plugins.time.primary.label}
         width={timeline?.marginLeft}
       />
+    {:else}
+      <!-- Keeps the histogram aligned with the rows' draw area when there are no plan times to show. -->
+      <div class="shrink-0" style:width={`${timeline?.marginLeft ?? 0}px`} />
     {/if}
     <div class="timeline-histogram-container">
       <TimelineHistogram
@@ -412,8 +416,6 @@
         drawHeight={timelineHistogramDrawHeight}
         {drawWidth}
         {mouseOver}
-        {planStartTimeYmd}
-        {simulationDataset}
         spans={spans || []}
         {timelineZoomTransform}
         {viewTimeRange}

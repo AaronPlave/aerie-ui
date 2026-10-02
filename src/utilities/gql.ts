@@ -203,6 +203,14 @@ const gql = {
     }
   `,
 
+  CREATE_ANALYSIS: `#graphql
+    mutation CreateAnalysis($analysis: analysis_insert_input!) {
+      analysis: ${Queries.INSERT_ANALYSIS}(object: $analysis) {
+        id
+      }
+    }
+  `,
+
   CREATE_CHANNEL_DICTIONARY: `#graphql
     mutation CreateChannelDictionary($channelDictionary: channel_dictionary_insert_input!) {
       createChannelDictionary: ${Queries.INSERT_CHANNEL_DICTIONARY}(object: $channelDictionary) {
@@ -679,6 +687,14 @@ const gql = {
     }
   `,
 
+  DELETE_ANALYSIS: `#graphql
+    mutation DeleteAnalysis($id: Int!) {
+      deleted: ${Queries.DELETE_ANALYSIS}(id: $id) {
+        id
+      }
+    }
+  `,
+
   DELETE_CHANNEL_DICTIONARY: `#graphql
     mutation DeleteChannelDictionary($id: Int!) {
       deleteChannelDictionary: ${Queries.DELETE_CHANNEL_DICTIONARY}(id: $id) {
@@ -1128,6 +1144,156 @@ const gql = {
         metadata
         name
         start_offset
+      }
+    }
+  `,
+
+  GET_ANALYSIS: `#graphql
+    query GetAnalysis($id: Int!) {
+      analysis: ${Queries.ANALYSIS}(id: $id) {
+        created_at
+        definition
+        id
+        name
+        owner
+        updated_at
+      }
+    }
+  `,
+
+  GET_ANALYSIS_ACTIVITIES: `#graphql
+    query GetAnalysisActivities(
+      $where: analysis_activity_bool_exp!
+      $orderBy: [analysis_activity_order_by!]!
+      $limit: Int!
+      $offset: Int!
+    ) {
+      activities: ${Queries.ANALYSIS_ACTIVITIES}(where: $where, order_by: $orderBy, limit: $limit, offset: $offset) {
+        activity_id
+        category
+        end_time
+        name
+        source_kind
+        source_ref
+        start_time
+        type
+      }
+    }
+  `,
+
+  GET_ANALYSIS_ACTIVITY_COUNT: `#graphql
+    query GetAnalysisActivityCount($where: analysis_activity_bool_exp!) {
+      activities: ${Queries.ANALYSIS_ACTIVITIES_AGGREGATE}(where: $where) {
+        aggregate {
+          count
+        }
+      }
+    }
+  `,
+
+  GET_ANALYSIS_SIMULATION_DATASETS: `#graphql
+    query GetAnalysisSimulationDatasets($ids: [Int!]!) {
+      datasets: ${Queries.SIMULATION_DATASETS}(where: { id: { _in: $ids } }) {
+        dataset {
+          profiles(order_by: { name: asc }) {
+            name
+            type
+          }
+        }
+        dataset_id
+        id
+        simulation {
+          plan {
+            id
+            mission_model {
+              activity_types {
+                computed_attributes_value_schema
+                name
+                parameters
+                required_parameters
+              }
+            }
+            name
+          }
+        }
+        simulation_end_time
+        simulation_start_time
+        status
+      }
+    }
+  `,
+
+  GET_ANALYSIS_SOURCE_OPTIONS: `#graphql
+    query GetAnalysisSourceOptions {
+      plans: ${Queries.PLANS}(order_by: { id: asc }) {
+        id
+        name
+        simulations {
+          simulation_datasets(order_by: { id: desc }) {
+            id
+            simulation_end_time
+            simulation_start_time
+            status
+          }
+        }
+      }
+      revisions: ${Queries.SOURCE_REVISIONS}(order_by: { id: desc }) {
+        activity_types_aggregate {
+          aggregate {
+            sum {
+              count
+            }
+          }
+        }
+        coverage_end
+        coverage_start
+        id
+        resources_aggregate {
+          aggregate {
+            count
+          }
+        }
+        source {
+          id
+          name
+          source_type
+        }
+        status
+      }
+    }
+  `,
+
+  GET_ANALYSIS_SOURCE_REVISIONS: `#graphql
+    query GetAnalysisSourceRevisions($ids: [Int!]!) {
+      revisions: ${Queries.SOURCE_REVISIONS}(where: { id: { _in: $ids } }) {
+        activity_types(order_by: { type: asc }) {
+          category
+          count
+          first_start
+          last_end
+          parameters
+          type
+        }
+        coverage_end
+        coverage_start
+        id
+        resources(order_by: { key: asc }) {
+          category
+          coverage_end
+          coverage_start
+          interpolation
+          key
+          numeric
+          sample_count
+          schema
+          units
+        }
+        source {
+          id
+          name
+          source_type
+        }
+        status
       }
     }
   `,
@@ -1659,6 +1825,61 @@ const gql = {
     }
   `,
 
+  GET_SOURCE_ACTIVITIES: `#graphql
+    query GetSourceActivities($where: source_activity_bool_exp!) {
+      activities: ${Queries.SOURCE_ACTIVITIES}(where: $where, order_by: { start_time: asc }) {
+        category
+        end_time
+        id
+        name
+        parameters
+        start_time
+        type
+      }
+    }
+  `,
+
+  GET_SOURCE_ACTIVITY_TIMES: `#graphql
+    query GetSourceActivityTimes($revisionId: Int!) {
+      activities: ${Queries.SOURCE_ACTIVITIES}(where: { revision_id: { _eq: $revisionId } }) {
+        end_time
+        start_time
+      }
+    }
+  `,
+
+  GET_SOURCE_ACTIVITY: `#graphql
+    query GetSourceActivity($revisionId: Int!, $id: Int!) {
+      activity: ${Queries.SOURCE_ACTIVITY}(revision_id: $revisionId, id: $id) {
+        attributes
+        category
+        end_time
+        id
+        metadata
+        name
+        parameters
+        revision_id
+        source_key
+        start_time
+        type
+      }
+    }
+  `,
+
+  GET_SPAN: `#graphql
+    query GetSpan($datasetId: Int!, $spanId: Int!) {
+      span: ${Queries.SPAN}(dataset_id: $datasetId, span_id: $spanId) {
+        attributes
+        dataset_id
+        duration
+        parent_id
+        span_id
+        start_offset
+        type
+      }
+    }
+  `,
+
   GET_SPANS: `#graphql
     query GetSpans($datasetId: Int!) {
       ${Queries.SPANS}(where: { dataset_id: { _eq: $datasetId } }, order_by: { start_offset: asc }) {
@@ -2162,6 +2383,18 @@ const gql = {
           name
         }
         description
+      }
+    }
+  `,
+
+  SUB_ANALYSES: `#graphql
+    subscription SubAnalyses {
+      analyses: ${Queries.ANALYSES}(order_by: { updated_at: desc }) {
+        created_at
+        id
+        name
+        owner
+        updated_at
       }
     }
   `,
@@ -3637,6 +3870,16 @@ const gql = {
         name
         associated_activity_type
         arguments
+      }
+    }
+  `,
+
+  UPDATE_ANALYSIS: `#graphql
+    mutation UpdateAnalysis($id: Int!, $updatedAt: timestamptz!, $analysis: analysis_set_input!) {
+      analysis: ${Queries.UPDATE_ANALYSIS}(where: { id: { _eq: $id }, updated_at: { _eq: $updatedAt } }, _set: $analysis) {
+        returning {
+          updated_at
+        }
       }
     }
   `,

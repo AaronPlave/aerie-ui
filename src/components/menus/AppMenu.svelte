@@ -12,6 +12,7 @@
     Boxes,
     BugPlay,
     CalendarRange,
+    ChartGantt,
     ChevronDown,
     ChevronsLeftRight,
     Clipboard,
@@ -73,6 +74,10 @@
           <MenuLink on:click={closeMenu} className="text-sm py-1.5" href="{base}/plans">
             <Clipboard size={16} />
             Plans
+          </MenuLink>
+          <MenuLink on:click={closeMenu} className="text-sm py-1.5" href="{base}/analyses">
+            <ChartGantt size={16} />
+            Analyses
           </MenuLink>
           <MenuLink on:click={closeMenu} className="text-sm py-1.5" href="{base}/models">
             <FileBox size={16} />

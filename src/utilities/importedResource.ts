@@ -31,6 +31,9 @@ export type SourceQueryResult = {
   series: SourceSeries;
 };
 
+/** Which revision a query reads: through a plan's use of it, or directly (an Analysis, which has no plan). */
+export type SourceTarget = { planSourceId: number } | { revisionId: number };
+
 export type SourceQuery = {
   end: number;
   fidelity: 'display' | 'exact';

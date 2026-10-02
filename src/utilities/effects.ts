@@ -92,6 +92,16 @@ import type {
   PlanSnapshotActivity,
 } from '../types/activity';
 import type { ActivityMetadata } from '../types/activity-metadata';
+import type {
+  Analysis,
+  AnalysisActivityRow,
+  AnalysisDefinition,
+  AnalysisSimulationDataset,
+  AnalysisSlim,
+  AnalysisSourceOptions,
+  AnalysisSourceRevision,
+  SourceActivity,
+} from '../types/analysis';
 import type { BaseUser, User, UserId, Version } from '../types/app';
 import type { ReqAuthResponse, ReqSessionResponse } from '../types/auth';
 import type {
@@ -289,7 +299,7 @@ import {
 } from './modal';
 import { featurePermissions, gatewayPermissions, queryPermissions } from './permissions';
 import { reqActionServer, reqExtension, reqGateway, reqHasura, WorkspaceSaveConflictError } from './requests';
-import type { SourceQuery, SourceQueryResult } from './importedResource';
+import type { SourceQuery, SourceQueryResult, SourceTarget } from './importedResource';
 import { convertResponseToMetadata } from './scheduling';
 import { buildSearchActivitiesWhereClauses, type ActivitySearchFilters } from './searchFilters';
 import { compareEvents } from './simulation';
@@ -1182,6 +1192,24 @@ const effects = {
     } catch (e) {
       catchError('log', 'Activity Preset Create Failed', e as Error);
       showFailureToast('Activity Preset Create Failed');
+      return null;
+    }
+  },
+
+  async createAnalysis(name: string, definition: AnalysisDefinition, user: User | null): Promise<number | null> {
+    try {
+      if (!queryPermissions.CREATE_ANALYSIS(user)) {
+        throwPermissionError('create an analysis');
+      }
+      const data = await reqHasura<{ id: number }>(gql.CREATE_ANALYSIS, { analysis: { definition, name } }, user);
+      if (data.analysis) {
+        logMessage('log', `Created analysis "${name}" (ID=${data.analysis.id}).`);
+        return data.analysis.id;
+      }
+      throw Error(`Unable to create analysis "${name}"`);
+    } catch (e) {
+      catchError('log', 'Analysis Create Failed', e as Error);
+      showFailureToast('Analysis Create Failed');
       return null;
     }
   },
@@ -2778,6 +2806,31 @@ const effects = {
     return false;
   },
 
+  async deleteAnalysis(analysis: AnalysisSlim, user: User | null): Promise<boolean> {
+    try {
+      if (!queryPermissions.DELETE_ANALYSIS(user, analysis)) {
+        throwPermissionError('delete this analysis');
+      }
+      const { confirm } = await showConfirmModal(
+        'Delete',
+        `Are you sure you want to delete "${analysis.name}"? The sources it uses are not affected.`,
+        'Delete Analysis',
+      );
+      if (confirm) {
+        const data = await reqHasura<{ id: number }>(gql.DELETE_ANALYSIS, { id: analysis.id }, user);
+        if (data.deleted) {
+          showSuccessToast('Analysis Deleted Successfully');
+          return true;
+        }
+        throw Error(`Unable to delete analysis "${analysis.name}"`);
+      }
+    } catch (e) {
+      catchError('log', 'Analysis Delete Failed', e as Error);
+      showFailureToast('Analysis Delete Failed');
+    }
+    return false;
+  },
+
   async deleteChannelDictionary(id: number, user: User | null): Promise<void> {
     try {
       if (!queryPermissions.DELETE_CHANNEL_DICTIONARY(user)) {
@@ -4203,6 +4256,83 @@ const effects = {
     }
   },
 
+  async getAnalysis(id: number, user: User | null): Promise<Analysis | null> {
+    try {
+      const data = await reqHasura<Analysis>(gql.GET_ANALYSIS, { id }, user);
+      return data.analysis ?? null;
+    } catch (e) {
+      catchError('log', 'Unable to retrieve analysis', e as Error);
+      return null;
+    }
+  },
+
+  async getAnalysisActivities(
+    where: Record<string, unknown>,
+    orderBy: Record<string, 'asc' | 'desc'>[],
+    offset: number,
+    limit: number,
+    user: User | null,
+    signal?: AbortSignal,
+  ): Promise<AnalysisActivityRow[]> {
+    const data = await reqHasura<AnalysisActivityRow[]>(
+      gql.GET_ANALYSIS_ACTIVITIES,
+      { limit, offset, orderBy, where },
+      user,
+      signal,
+    );
+    return data.activities ?? [];
+  },
+
+  async getAnalysisActivityCount(
+    where: Record<string, unknown>,
+    user: User | null,
+    signal?: AbortSignal,
+  ): Promise<number> {
+    const data = await reqHasura<{ aggregate: { count: number } }>(
+      gql.GET_ANALYSIS_ACTIVITY_COUNT,
+      { where },
+      user,
+      signal,
+    );
+    return data.activities?.aggregate.count ?? 0;
+  },
+
+  async getAnalysisSimulationDatasets(ids: number[], user: User | null): Promise<AnalysisSimulationDataset[]> {
+    if (!ids.length) {
+      return [];
+    }
+    try {
+      const data = await reqHasura<AnalysisSimulationDataset[]>(gql.GET_ANALYSIS_SIMULATION_DATASETS, { ids }, user);
+      return data.datasets ?? [];
+    } catch (e) {
+      catchError('log', 'Unable to retrieve simulation datasets', e as Error);
+      return [];
+    }
+  },
+
+  async getAnalysisSourceOptions(user: User | null): Promise<AnalysisSourceOptions> {
+    try {
+      const data = await reqHasura<any>(gql.GET_ANALYSIS_SOURCE_OPTIONS, {}, user);
+      return { plans: data.plans ?? [], revisions: data.revisions ?? [] };
+    } catch (e) {
+      catchError('log', 'Unable to retrieve sources', e as Error);
+      return { plans: [], revisions: [] };
+    }
+  },
+
+  async getAnalysisSourceRevisions(ids: number[], user: User | null): Promise<AnalysisSourceRevision[]> {
+    if (!ids.length) {
+      return [];
+    }
+    try {
+      const data = await reqHasura<AnalysisSourceRevision[]>(gql.GET_ANALYSIS_SOURCE_REVISIONS, { ids }, user);
+      return data.revisions ?? [];
+    } catch (e) {
+      catchError('log', 'Unable to retrieve source revisions', e as Error);
+      return [];
+    }
+  },
+
   async getConstraint(id: number, user: User | null): Promise<ConstraintMetadata | null> {
     try {
       const data = await reqHasura<ConstraintMetadata>(convertToQuery(gql.SUB_CONSTRAINT), { id }, user);
@@ -5161,6 +5291,52 @@ const effects = {
     }
 
     return null;
+  },
+
+  async getSourceActivities(
+    revisionId: number,
+    types: string[] | null,
+    user: User | null,
+  ): Promise<Pick<SourceActivity, 'category' | 'end_time' | 'id' | 'name' | 'parameters' | 'start_time' | 'type'>[]> {
+    const data = await reqHasura<SourceActivity[]>(
+      gql.GET_SOURCE_ACTIVITIES,
+      { where: { revision_id: { _eq: revisionId }, ...(types ? { type: { _in: types } } : {}) } },
+      user,
+    );
+    return data.activities ?? [];
+  },
+
+  /** When each activity of a revision is, for counting them over time. */
+  async getSourceActivityTimes(revisionId: number, user: User | null): Promise<Pick<Span, 'durationMs' | 'startMs'>[]> {
+    const data = await reqHasura<Pick<SourceActivity, 'end_time' | 'start_time'>[]>(
+      gql.GET_SOURCE_ACTIVITY_TIMES,
+      { revisionId },
+      user,
+    );
+    return (data.activities ?? []).map(({ end_time, start_time }) => {
+      const startMs = Date.parse(start_time);
+      return { durationMs: Date.parse(end_time) - startMs, startMs };
+    });
+  },
+
+  async getSourceActivity(revisionId: number, id: number, user: User | null): Promise<SourceActivity | null> {
+    try {
+      const data = await reqHasura<SourceActivity>(gql.GET_SOURCE_ACTIVITY, { id, revisionId }, user);
+      return data.activity ?? null;
+    } catch (e) {
+      catchError('log', 'Unable to retrieve activity', e as Error);
+      return null;
+    }
+  },
+
+  async getSpan(datasetId: number, spanId: number, user: User | null): Promise<SpanDB | null> {
+    try {
+      const data = await reqHasura<SpanDB>(gql.GET_SPAN, { datasetId, spanId }, user);
+      return data.span ?? null;
+    } catch (e) {
+      catchError('log', 'Unable to retrieve span', e as Error);
+      return null;
+    }
   },
 
   async getSpans(
@@ -6615,7 +6791,7 @@ const effects = {
    * Display queries return at most query.pointBudget points per resource; see the gateway's /sources/query.
    */
   async querySourceResources(
-    planSourceId: number,
+    target: SourceTarget,
     resources: string[],
     query: SourceQuery,
     user: User | null,
@@ -6624,7 +6800,7 @@ const effects = {
     return reqGateway(
       '/sources/query',
       'POST',
-      JSON.stringify({ planSourceId, resources, ...query }),
+      JSON.stringify({ ...target, resources, ...query }),
       user,
       false,
       signal,
@@ -7348,6 +7524,35 @@ const effects = {
     } catch (e) {
       catchError('log', 'Activity Preset Update Failed', e as Error);
       showFailureToast('Activity Preset Update Failed');
+    }
+  },
+
+  /**
+   * Saves changes to an analysis if nobody else has saved it since `analysis` was read (its `updated_at`).
+   * Returns the new `updated_at`, 'conflict' when it was saved elsewhere first, or null on failure.
+   */
+  async updateAnalysis(
+    analysis: AnalysisSlim,
+    update: Partial<Pick<Analysis, 'definition' | 'name'>>,
+    user: User | null,
+  ): Promise<string | 'conflict' | null> {
+    try {
+      if (!queryPermissions.UPDATE_ANALYSIS(user, analysis)) {
+        throwPermissionError('update this analysis');
+      }
+      const data = await reqHasura<{ returning: { updated_at: string }[] }>(
+        gql.UPDATE_ANALYSIS,
+        { analysis: update, id: analysis.id, updatedAt: analysis.updated_at },
+        user,
+      );
+      if (data.analysis) {
+        return data.analysis.returning[0]?.updated_at ?? 'conflict';
+      }
+      throw Error(`Unable to update analysis "${analysis.name}"`);
+    } catch (e) {
+      catchError('log', 'Analysis Update Failed', e as Error);
+      showFailureToast('Analysis Update Failed');
+      return null;
     }
   },
 

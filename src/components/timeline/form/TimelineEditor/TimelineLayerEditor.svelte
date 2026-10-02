@@ -10,7 +10,7 @@
   import TimelineXRangeLayerIcon from '../../../../assets/timeline-x-range-layer.svg?component';
   import { ViewDiscreteLayerColorPresets, ViewLineLayerColorPresets } from '../../../../constants/view';
   import { externalResourceNames, resourceTypes } from '../../../../stores/simulation';
-  import { timelineSources } from '../../../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../../../stores/timelineSources';
   import type { RadioButtonId } from '../../../../types/radio-buttons';
   import type {
     ActivityLayer,
@@ -33,6 +33,8 @@
   import TimelineEditorLayerSettings from '../TimelineEditorLayerSettings.svelte';
   import ActivityFilterBuilder from './ActivityFilterBuilder.svelte';
   import ExternalEventFilterBuilder from './ExternalEventFilterBuilder.svelte';
+
+  const timelineSources = getTimelineSourcesContext();
 
   export let layer: Layer;
   export let yAxes: Axis[] = [];
@@ -226,6 +228,9 @@
       {#if isActivityLayer(layer)}
         {@const filterCount = getActivityLayerFilterCount(layer)}
         <ActivityFilterBuilder
+          catalog={activitySourceId === PLAN_SOURCE_ID
+            ? null
+            : (getSource($timelineSources, activitySourceId)?.intervals?.catalog ?? [])}
           layerName={layer.name}
           filter={layer.filter.activity}
           on:filterChange

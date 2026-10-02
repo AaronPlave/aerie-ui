@@ -11,6 +11,7 @@
   import { planModelActivityTypes, subsystemTags } from '../../../../stores/plan';
   import { spans, spanUtilityMaps } from '../../../../stores/simulation';
   import { tags } from '../../../../stores/tags';
+  import type { ActivityType } from '../../../../types/activity';
   import type { ValueSchemaVariant } from '../../../../types/schema';
   import type { ActivityLayerFilter, ActivityLayerFilterSubfieldSchema } from '../../../../types/timeline';
   import { compare, getTarget, lowercase } from '../../../../utilities/generic';
@@ -31,6 +32,11 @@
   import DynamicFilter from './DynamicFilter.svelte';
   import ActivityTypeResult from './FilterTypeResult.svelte';
 
+  /**
+   * The types of the layer's source when it is not the Plan. The filter then applies to that source's catalog, and
+   * instance counts are not shown (its activities are not loaded here).
+   */
+  export let catalog: ActivityType[] | null = null;
   export let filter: ActivityLayerFilter | undefined = undefined;
   export const filterWidth = 1000;
   export const filterHeight = 500;
@@ -201,12 +207,13 @@
     dirtyFilter = structuredClone(filter);
   }
 
-  $: activityDirectives = Object.values($activityDirectivesMap || {});
+  $: activityTypes = catalog ?? $planModelActivityTypes;
+  $: activityDirectives = catalog ? [] : Object.values($activityDirectivesMap || {});
   $: appliedFilter = applyActivityLayerFilter(
     dirtyFilter,
     activityDirectives,
-    $spans || [],
-    $planModelActivityTypes,
+    catalog ? [] : $spans || [],
+    activityTypes,
     $activityArgumentDefaultsMap,
   );
 
@@ -227,7 +234,7 @@
     instanceCount = count;
   }
 
-  $: matchingTypes = getMatchingTypesForActivityLayerFilter(dirtyFilter, $planModelActivityTypes);
+  $: matchingTypes = getMatchingTypesForActivityLayerFilter(dirtyFilter, activityTypes);
   $: filteredMatchingTypes = matchingTypes.filter(type => {
     if (!resultingTypesInputValue) {
       return true;
@@ -237,7 +244,7 @@
   });
 
   $: {
-    const allParameterTypes = (matchingTypes.length ? matchingTypes : $planModelActivityTypes).reduce(
+    const allParameterTypes = (matchingTypes.length ? matchingTypes : activityTypes).reduce(
       (acc: Record<string, ActivityLayerFilterSubfieldSchema>, activityType) => {
         Object.entries(activityType.parameters).forEach(([parameterName, parameter]) => {
           const parameterType = parameter.schema.type;
@@ -282,7 +289,7 @@
     parameterSubfields = Object.values(allParameterTypes).sort((a, b) => compare(a.label, b.label));
   }
 
-  $: filteredActivityTypes = $planModelActivityTypes.filter(type => {
+  $: filteredActivityTypes = activityTypes.filter(type => {
     if (!manualInputValue) {
       return true;
     }
@@ -428,7 +435,7 @@
                       {#if filteredActivityTypes.length > 0}
                         <MenuItem on:click={() => onAddAllManualTypes()}>
                           <div class="st-typography-bold manual-types-add-all">
-                            Add {filteredActivityTypes.length !== $planModelActivityTypes.length ? 'Matching' : 'All'} +
+                            Add {filteredActivityTypes.length !== activityTypes.length ? 'Matching' : 'All'} +
                           </div>
                         </MenuItem>
                         {#each filteredActivityTypes as type}
@@ -487,9 +494,9 @@
                             includes: { type: 'tag', values: $subsystemTags },
                           },
                           Type: {
-                            does_not_equal: { type: 'variant', values: $planModelActivityTypes.map(type => type.name) },
+                            does_not_equal: { type: 'variant', values: activityTypes.map(type => type.name) },
                             does_not_include: { type: 'string' },
-                            equals: { type: 'variant', values: $planModelActivityTypes.map(type => type.name) },
+                            equals: { type: 'variant', values: activityTypes.map(type => type.name) },
                             includes: { type: 'string' },
                           },
                         }}
@@ -557,7 +564,12 @@
               Resulting Types
               <div class="resulting-types-info-container">
                 <div class="resulting-types-info"><DirectiveIcon /> {matchingTypes.length} types</div>
-                <div class="resulting-types-info"><SpanIcon /> {instanceCount} instance{pluralize(instanceCount)}</div>
+                {#if !catalog}
+                  <div class="resulting-types-info">
+                    <SpanIcon />
+                    {instanceCount} instance{pluralize(instanceCount)}
+                  </div>
+                {/if}
               </div>
             </div>
             <Input>

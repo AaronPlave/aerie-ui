@@ -20,14 +20,16 @@
     LineLayer,
     MouseOver,
   } from '../../types/timeline';
-  import { timelineSources } from '../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../stores/timelineSources';
   import { getResourceForLayer } from '../../utilities/timeline';
-  import { getSourceLabel } from '../../utilities/timelineSources';
+  import { getSourceLabel, PLAN_SOURCE_ID, resolveActivityLayerSourceId } from '../../utilities/timelineSources';
   import { tooltip } from '../../utilities/tooltip';
   import DropTarget from './DropTarget.svelte';
   import RowHeaderDiscreteTree from './RowHeaderDiscreteTree.svelte';
   import RowHeaderMenu from './RowHeaderMenu.svelte';
   import RowYAxes from './RowYAxes.svelte';
+
+  const timelineSources = getTimelineSourcesContext();
 
   export let discreteTree: DiscreteTree = [];
   export let discreteOptions: DiscreteOptions = { ...ViewDefaultDiscreteOptions };
@@ -104,6 +106,19 @@
       });
     });
   }
+
+  // Activities of sources other than the Plan name their sources, read live so a rebound or removed source never
+  // leaves a stale label behind (row names stay the user's).
+  $: activitySourceCaption = [
+    ...new Set(
+      layers
+        .filter(layer => layer.chartType === 'activity')
+        .map(resolveActivityLayerSourceId)
+        .filter(sourceId => sourceId !== PLAN_SOURCE_ID),
+    ),
+  ]
+    .map(sourceId => getSourceLabel($timelineSources, sourceId))
+    .join(', ');
 </script>
 
 <div
@@ -155,6 +170,9 @@
               >
                 {title}
               </div>
+              {#if activitySourceCaption && height > 36}
+                <div class="truncate text-[10px] text-muted-foreground">{activitySourceCaption}</div>
+              {/if}
             </div>
           </button>
           <slot />

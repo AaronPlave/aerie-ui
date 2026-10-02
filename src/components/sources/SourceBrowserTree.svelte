@@ -64,6 +64,7 @@
       {/if}
       <LayerPicker
         layerItem={action.item}
+        sourceId={action.sourceId ?? undefined}
         {rows}
         chartType={chartTypeFor(action)}
         on:select={({ detail: { layer, row } }) => dispatch('add', { action, layer, row })}

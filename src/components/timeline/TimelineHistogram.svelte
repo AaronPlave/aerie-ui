@@ -11,15 +11,10 @@
   import type { ActivityDirective } from '../../types/activity';
   import type { ConstraintResult } from '../../types/constraint';
   import type { ExternalEvent } from '../../types/external-event';
-  import type { SimulationDataset, Span } from '../../types/simulation';
+  import type { Span } from '../../types/simulation';
   import type { MouseOver, TimeRange } from '../../types/timeline';
   import { clamp } from '../../utilities/generic';
-  import {
-    formatDate,
-    getIntervalInMs,
-    getUnixEpochTimeFromInterval,
-    removeDateStringMilliseconds,
-  } from '../../utilities/time';
+  import { formatDate, removeDateStringMilliseconds } from '../../utilities/time';
   import { tooltip } from '../../utilities/tooltip';
 
   export let activityDirectives: ActivityDirective[] = [];
@@ -30,9 +25,7 @@
   export let drawWidth: number = 0;
   export let loading: boolean = true;
   export let mouseOver: MouseOver | null;
-  export let planStartTimeYmd: string;
-  export let simulationDataset: SimulationDataset | null = null;
-  export let spans: Span[] = [];
+  export let spans: Pick<Span, 'durationMs' | 'startMs'>[] = [];
   export let timelineZoomTransform: ZoomTransform | null;
   export let viewTimeRange: TimeRange = { end: 0, start: 0 };
   export let xScaleMax: ScaleTime<number, number> | null = null;
@@ -182,9 +175,8 @@
     });
 
     spans.forEach(span => {
-      const startYmd = simulationDataset?.simulation_start_time ?? planStartTimeYmd;
-      const spanX = getUnixEpochTimeFromInterval(startYmd, span.start_offset);
-      const spanDuration = getIntervalInMs(span.duration);
+      const spanX = span.startMs;
+      const spanDuration = span.durationMs;
 
       // Filter out spans that do not fall within the plan bounds at all
       if (spanX > windowEndTime || spanX + spanDuration < windowStartTime) {

@@ -6,7 +6,7 @@
 -->
 <script lang="ts">
   import UploadIcon from '@nasa-jpl/stellar/icons/upload.svg?component';
-  import { timelineSources } from '../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../stores/timelineSources';
   import { view, viewAddFilterToRow } from '../../stores/views';
   import type { User } from '../../types/app';
   import type { Layer, Row, TimelineItemMetadata } from '../../types/timeline';
@@ -21,24 +21,27 @@
   import ExternalDatasetUpload from '../ExternalDatasetUpload.svelte';
   import SourceBrowserTree from './SourceBrowserTree.svelte';
 
-  export let user: User | null;
+  const timelineSources = getTimelineSourcesContext();
 
-  const GROUP_ORDER = ['Plan', 'External Datasets', 'External Events', 'Imported Sources'];
-  const EMPTY_GROUP_MESSAGES: Record<string, string> = {
+  /** The groups shown, in order, with what each says when empty; the Plan page's unless a page gives its own. */
+  export let groups: string[] = ['Plan', 'External Datasets', 'External Events', 'Imported Sources'];
+  export let emptyGroupMessages: Record<string, string> = {
     'External Datasets': 'No external datasets are attached to this plan',
     'External Events': 'No derivation groups are linked to this plan',
     'Imported Sources': 'No imported sources are attached to this plan',
   };
+  export let showUpload: boolean = true;
+  export let user: User | null;
 
   let expanded: Record<string, boolean> = {};
   let filterText: string = '';
   let isUploadVisible: boolean = false;
 
   $: rows = $view?.definition.plan.timelines[0]?.rows ?? [];
-  $: nodes = filterSourceBrowserNodes(getBrowserNodes($timelineSources), filterText);
+  $: nodes = filterSourceBrowserNodes(getBrowserNodes($timelineSources, groups), filterText);
 
-  function getBrowserNodes(registry: TimelineSourceRegistry): SourceBrowserNode[] {
-    return GROUP_ORDER.map(group => {
+  function getBrowserNodes(registry: TimelineSourceRegistry, groupOrder: string[]): SourceBrowserNode[] {
+    return groupOrder.map(group => {
       const sources = registry.sources.filter(source => source.group === group);
       // A group holding a single source of the same name shows that source's contents directly.
       const flattened = sources.length === 1 && sources[0].label === group;
@@ -59,7 +62,7 @@
         emptyMessage:
           registry.loading || sources.some(isSourceLoading)
             ? 'Loading…'
-            : (EMPTY_GROUP_MESSAGES[group] ?? 'Nothing available'),
+            : (emptyGroupMessages[group] ?? 'Nothing available'),
         id: `group:${group}`,
         kind: 'group',
         label: group,
@@ -109,14 +112,16 @@
       placeholder="Filter sources"
       aria-label="Filter sources"
     />
-    <button
-      class="st-button secondary"
-      aria-label="Upload External Dataset"
-      on:click={() => (isUploadVisible = !isUploadVisible)}
-      use:tooltip={{ content: 'Upload External Dataset' }}
-    >
-      <UploadIcon />
-    </button>
+    {#if showUpload}
+      <button
+        class="st-button secondary"
+        aria-label="Upload External Dataset"
+        on:click={() => (isUploadVisible = !isUploadVisible)}
+        use:tooltip={{ content: 'Upload External Dataset' }}
+      >
+        <UploadIcon />
+      </button>
+    {/if}
   </div>
   {#if isUploadVisible}
     <ExternalDatasetUpload {user} on:close={() => (isUploadVisible = false)} />

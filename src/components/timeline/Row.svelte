@@ -18,7 +18,7 @@
   import { planModelActivityTypes } from '../../stores/plan';
   import { createProfileSubscription } from '../../stores/profile';
   import { resourceTypes, resourceTypesLoading } from '../../stores/simulation';
-  import { timelineSources } from '../../stores/timelineSources';
+  import { getTimelineSourcesContext } from '../../stores/timelineSources';
   import { selectedRow, viewAddFilterToRow } from '../../stores/views';
   import type {
     ActivityDirective,
@@ -58,8 +58,14 @@
     TimelineItemType,
     XAxisTick,
   } from '../../types/timeline';
-  import type { TimelineResourceSubscription, TimelineResourceSubscriptionContext } from '../../types/timelineSource';
-  import { getAllSpansForActivityDirective } from '../../utilities/activities';
+  import type {
+    TimelineActivityState,
+    TimelineActivitySubscription,
+    TimelineResourceSubscription,
+    TimelineResourceSubscriptionContext,
+    TimelineViewport,
+  } from '../../types/timelineSource';
+  import { createSpanUtilityMaps, getAllSpansForActivityDirective } from '../../utilities/activities';
   import effects from '../../utilities/effects';
   import { getExternalEventRowId } from '../../utilities/externalEvents';
   import { classNames } from '../../utilities/generic';
@@ -104,6 +110,8 @@
   import RowHorizontalGuides from './RowHorizontalGuides.svelte';
   import RowXAxisTicks from './RowXAxisTicks.svelte';
   import RowYAxisTicks from './RowYAxisTicks.svelte';
+
+  const timelineSources = getTimelineSourcesContext();
 
   export let activityDirectives: ActivityDirective[] | null = [];
   export let externalEvents: ExternalEvent[] = [];
@@ -197,6 +205,16 @@
   };
 
   let resourceRequestMap: Record<string, ResourceRequest> = {};
+  /** Activity layers bound to a source other than the Plan, by layer id: what each source sent for them. */
+  type ActivityRequest = TimelineActivityState & {
+    revisionKey: string;
+    setViewport?: (viewport: TimelineViewport) => void;
+    sourceId: string;
+    unsubscribe: () => void;
+  };
+  let activityRequestMap: Record<string, ActivityRequest> = {};
+  let rowSpansMap: SpansMap | null = null;
+  let rowSpanUtilityMaps: SpanUtilityMaps | null = null;
   let resourceSourceErrors: string[] = [];
   let loadedResources: Resource[];
   let resourceLoadingErrors: string[];
@@ -242,7 +260,7 @@
   // Resource requests are keyed by (source, name), never by bare name: the same resource name can come from
   // the simulation and from several external datasets in one row. Layers without a source keep the legacy
   // merged lookup under their own key (see getResourceRequestKey).
-  $: if (plan && layers) {
+  $: if (layers) {
     const context: TimelineResourceSubscriptionContext = { plan, simulationDataset, user };
     const desired: Record<string, DesiredResourceRequest> = {};
     layers.forEach(layer => {
@@ -253,8 +271,8 @@
       const key = getResourceRequestKey(layer.sourceId, name);
       const resolution = resolveResourceLayerSource(layer, $timelineSources);
       if (resolution.kind === 'legacy') {
-        // Unchanged legacy behavior: requires a simulation dataset and the model's resource types.
-        if (simulationDataset === null || $resourceTypesLoading) {
+        // Unchanged legacy behavior: requires a plan, a simulation dataset and the model's resource types.
+        if (!plan || simulationDataset === null || $resourceTypesLoading) {
           return;
         }
         const simulation = simulationDataset;
@@ -341,10 +359,68 @@
     });
   }
 
+  // Activity layers bound to a source other than the Plan read it through a subscription, as resource layers do:
+  // the source filters by type, and the layer's other filters are applied below with the Plan's.
+  $: {
+    const context: TimelineResourceSubscriptionContext = { plan, simulationDataset, user };
+    const desired: Record<
+      string,
+      { create: () => TimelineActivitySubscription; revisionKey: string; sourceId: string }
+    > = {};
+    activityLayers.forEach(layer => {
+      const sourceId = resolveActivityLayerSourceId(layer);
+      const intervals = sourceId === PLAN_SOURCE_ID ? undefined : getSource($timelineSources, sourceId)?.intervals;
+      const subscribe = intervals?.subscribe;
+      if (!subscribe) {
+        return;
+      }
+      const staticTypes = layer.filter.activity?.static_types ?? [];
+      const types = staticTypes.length ? [...staticTypes].sort() : null;
+      desired[layer.id] = {
+        create: () => subscribe({ types }, context),
+        revisionKey: `${sourceId}|${intervals.revisionKey ?? ''}|${types?.join('\u0000') ?? '*'}`,
+        sourceId,
+      };
+    });
+    Object.entries(activityRequestMap).forEach(([key, request]) => {
+      if (!desired[key] || desired[key].revisionKey !== request.revisionKey) {
+        request.unsubscribe();
+        delete activityRequestMap[key];
+        activityRequestMap = { ...activityRequestMap };
+      }
+    });
+    Object.entries(desired).forEach(([key, request]) => {
+      if (activityRequestMap[key]) {
+        return;
+      }
+      const subscription = request.create();
+      let storeUnsubscribe: (() => void) | null = null;
+      storeUnsubscribe = subscription.store.subscribe(state => {
+        activityRequestMap = {
+          ...activityRequestMap,
+          [key]: {
+            ...state,
+            revisionKey: request.revisionKey,
+            setViewport: subscription.setViewport,
+            sourceId: request.sourceId,
+            unsubscribe: () => {
+              storeUnsubscribe?.();
+              subscription.unsubscribe();
+            },
+          },
+        };
+      });
+      if (drawWidth > 0 && viewTimeRange.end > viewTimeRange.start) {
+        subscription.setViewport?.({ end: viewTimeRange.end, pixels: drawWidth, start: viewTimeRange.start });
+      }
+    });
+  }
+
   // Viewport-driven sources serve what the row shows; they coalesce rapid changes themselves.
   $: if (drawWidth > 0 && viewTimeRange.end > viewTimeRange.start) {
     const viewport = { end: viewTimeRange.end, pixels: drawWidth, start: viewTimeRange.start };
     Object.values(resourceRequestMap).forEach(request => request.setViewport?.(viewport));
+    Object.values(activityRequestMap).forEach(request => request.setViewport?.(viewport));
   }
 
   onDestroy(() => {
@@ -352,6 +428,8 @@
       value.unsubscribe?.();
     });
     resourceRequestMap = {};
+    Object.values(activityRequestMap).forEach(request => request.unsubscribe());
+    activityRequestMap = {};
   });
 
   $: onDragenter(dragenter);
@@ -363,13 +441,18 @@
   $: rowClasses = classNames('row', { 'row-collapsed': !expanded });
   $: discreteOptions = discreteOptions || { ...ViewDefaultDiscreteOptions };
   $: activityLayers = layers.filter(isActivityLayer);
-  // Only the Plan provides activities (directives and simulated spans) today. An activity layer bound to any
-  // other source shows that source as unavailable instead of silently reading the Plan's activities.
+  // The Plan's activities (directives and simulated spans) are drawn through the existing path; other sources'
+  // through their subscriptions. An activity layer bound to a source without activities shows that source as
+  // unavailable instead of silently reading the Plan's activities.
   $: planActivityLayers = activityLayers.filter(layer => resolveActivityLayerSourceId(layer) === PLAN_SOURCE_ID);
   $: activitySourceErrors = [
     ...new Set(
       activityLayers
-        .filter(layer => resolveActivityLayerSourceId(layer) !== PLAN_SOURCE_ID)
+        .filter(
+          layer =>
+            resolveActivityLayerSourceId(layer) !== PLAN_SOURCE_ID &&
+            !getSource($timelineSources, layer.sourceId)?.intervals?.subscribe,
+        )
         .map(layer => {
           const source = getSource($timelineSources, layer.sourceId);
           return source
@@ -378,6 +461,23 @@
         }),
     ),
   ];
+  $: activityRequests = Object.values(activityRequestMap);
+  $: activityRequestsLoading = activityRequests.some(request => request.loading);
+  $: activityRequestNotices = [
+    ...new Set(
+      activityRequests.flatMap(request => (request.error ? [`Failed to load activities: ${request.error}`] : [])),
+    ),
+  ];
+  // Rows showing activities of more than one source label each source's groups with the source.
+  $: activityGroupSourceLabels =
+    new Set(activityLayers.map(layer => resolveActivityLayerSourceId(layer))).size > 1
+      ? Object.fromEntries(
+          activityRequests.map(request => [
+            request.sourceId,
+            getSource($timelineSources, request.sourceId)?.label ?? request.sourceId,
+          ]),
+        )
+      : undefined;
   $: externalEventLayers = layers.filter(isExternalEventLayer);
   $: lineLayers = layers.filter(layer => isLineLayer(layer) || (isXRangeLayer(layer) && layer.showAsLinePlot));
   $: xRangeLayers = layers.filter(layer => isXRangeLayer(layer) && !layer.showAsLinePlot);
@@ -521,6 +621,43 @@
             spans = spans.concat(uniqueSpans);
           }
         });
+
+        // Activities of other sources: each carries its source, and its drawing id is unique on the page.
+        const sourceSpans: Span[] = [];
+        activityLayers.forEach(layer => {
+          const request = activityRequestMap[layer.id];
+          if (!request) {
+            return;
+          }
+          sourceSpans.push(...request.spans);
+          const { spans: matchingSpans } = applyActivityLayerFilter(
+            layer.filter.activity,
+            [],
+            request.spans,
+            getSource($timelineSources, request.sourceId)?.intervals?.catalog ?? [],
+            {},
+          );
+          matchingSpans.forEach(span => {
+            if (!seenSpanIds[span.span_id]) {
+              idToColorMaps.spans[span.span_id] = layer.activityColor;
+              seenSpanIds[span.span_id] = true;
+              spans.push(span);
+            }
+          });
+        });
+        // Hierarchy lookups (children, parents) need every span a source sent, not only the matching ones.
+        if (sourceSpans.length) {
+          const sourceMaps = createSpanUtilityMaps(sourceSpans);
+          rowSpansMap = { ...spansMap, ...Object.fromEntries(sourceSpans.map(span => [span.span_id, span])) };
+          rowSpanUtilityMaps = {
+            directiveIdToSpanIdMap: spanUtilityMaps.directiveIdToSpanIdMap,
+            spanIdToChildIdsMap: { ...spanUtilityMaps.spanIdToChildIdsMap, ...sourceMaps.spanIdToChildIdsMap },
+            spanIdToDirectiveIdMap: spanUtilityMaps.spanIdToDirectiveIdMap,
+          };
+        } else {
+          rowSpansMap = spansMap;
+          rowSpanUtilityMaps = spanUtilityMaps;
+        }
         directives.sort((a, b) => ((a.start_time_ms ?? 0) < (b.start_time_ms ?? 0) ? -1 : 1));
         spans.sort((a, b) => (a.startMs < b.startMs ? -1 : 1));
         if (directives.length || spans.length) {
@@ -655,13 +792,14 @@
       hierarchyMode,
       groupEventsByMethod,
       filterItemsByTime,
-      spanUtilityMaps,
-      spansMap || {},
+      rowSpanUtilityMaps ?? spanUtilityMaps,
+      rowSpansMap || spansMap || {},
       showSpans,
       showDirectives,
       viewTimeRange,
       hasExternalEventsLayer,
       hasActivityLayer,
+      activityGroupSourceLabels,
     );
   }
 
@@ -1021,7 +1159,7 @@
         </g>
       </svg>
       <!-- Loading indicator -->
-      {#if (hasResourceLayer && anyResourcesLoading) || (hasActivityLayerFilters && (!activityDirectivesMap || !spansMap)) || (hasExternalEventsLayer && $externalEventsLoading)}
+      {#if (hasResourceLayer && anyResourcesLoading) || (hasActivityLayerFilters && (!activityDirectivesMap || !spansMap)) || activityRequestsLoading || (hasExternalEventsLayer && $externalEventsLoading)}
         <div class="layer-message loading st-typography-label">Loading...</div>
       {/if}
       <!-- Empty state -->
@@ -1031,6 +1169,9 @@
       <!-- Resource error indicator -->
       {#each activitySourceErrors as sourceError}
         <div class="layer-message error st-typography-label">{sourceError}</div>
+      {/each}
+      {#each activityRequestNotices as notice}
+        <div class="layer-notice st-typography-label">{notice}</div>
       {/each}
       {#each hasResourceLayer ? resourceSourceErrors : [] as sourceError}
         <div class="layer-message error st-typography-label">{sourceError}</div>
@@ -1106,8 +1247,8 @@
             {selectedActivityDirectiveId}
             {selectedSpanId}
             {selectedExternalEventId}
-            {spanUtilityMaps}
-            spansMap={spansMap || {}}
+            spanUtilityMaps={rowSpanUtilityMaps ?? spanUtilityMaps}
+            spansMap={rowSpansMap || spansMap || {}}
             {timelineInteractionMode}
             {timelineLockStatus}
             {user}
@@ -1286,6 +1427,18 @@
     position: absolute;
     width: 100%;
     z-index: 3;
+  }
+
+  .layer-notice {
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--st-gray-60);
+    font-size: 10px;
+    padding: 0 4px;
+    pointer-events: none;
+    position: absolute;
+    right: 0;
+    top: 0;
+    z-index: 4;
   }
 
   .loading {

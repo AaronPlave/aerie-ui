@@ -4,10 +4,14 @@
   import { DropdownMenu } from '@nasa-jpl/stellar-svelte';
   import { createEventDispatcher } from 'svelte';
   import type { ChartType, Layer, Row, TimelineItemType } from '../types/timeline';
+  import type { TimelineSourceId } from '../types/timelineSource';
+  import { resolveActivityLayerSourceId } from '../utilities/timelineSources';
 
   export let rows: Row[] = [];
   export let chartType: ChartType = 'activity';
   export let layerItem: TimelineItemType | undefined = undefined;
+  /** The item's source: only layers reading the same source can take it. Any layer when not given. */
+  export let sourceId: TimelineSourceId | undefined = undefined;
 
   const dispatch = createEventDispatcher<{
     select: { item?: TimelineItemType; layer?: Layer; row?: Row };
@@ -52,7 +56,7 @@
             {#if isResourceChart}
               <DropdownMenu.Item size="sm" on:click={() => onSelect(layerItem, row)}>{row.name}</DropdownMenu.Item>
             {:else}
-              {#each row.layers.filter(l => l.chartType === chartType) as layer}
+              {#each row.layers.filter(l => l.chartType === chartType && (!sourceId || resolveActivityLayerSourceId(l) === sourceId)) as layer}
                 <DropdownMenu.Item size="sm" on:click={() => onSelect(layerItem, row, layer)}>
                   <div class="capitalize">
                     {layer.name || `${layer.chartType} Layer`}

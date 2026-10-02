@@ -49,9 +49,9 @@ describe('createImportedResourceSubscription', () => {
       interpolation: 'linear',
       key: 'r',
       numeric: true,
-      planSourceId: 1,
       query,
       resourceType: { name: 'r', schema: { type: 'real' } },
+      target: { planSourceId: 1 },
     });
   }
 
@@ -130,15 +130,24 @@ describe('getSourceQuery', () => {
   it('batches a session’s rows together, and never with another session’s', async () => {
     const alice = user('token-a');
     const aliceAsViewer = { ...alice, activeRole: 'viewer' } as User;
-    expect(getSourceQuery(1, alice)).toBe(getSourceQuery(1, alice));
-    expect(getSourceQuery(1, aliceAsViewer)).not.toBe(getSourceQuery(1, alice));
+    const planSource = { planSourceId: 1 };
+    expect(getSourceQuery(planSource, alice)).toBe(getSourceQuery({ planSourceId: 1 }, alice));
+    expect(getSourceQuery(planSource, aliceAsViewer)).not.toBe(getSourceQuery(planSource, alice));
 
-    getSourceQuery(1, alice)(window, 'a');
-    getSourceQuery(1, alice)(window, 'b');
-    getSourceQuery(1, aliceAsViewer)(window, 'c');
+    getSourceQuery(planSource, alice)(window, 'a');
+    getSourceQuery(planSource, alice)(window, 'b');
+    getSourceQuery(planSource, aliceAsViewer)(window, 'c');
     await vi.advanceTimersByTimeAsync(50);
     expect(querySourceResources).toHaveBeenCalledTimes(2);
-    expect(querySourceResources).toHaveBeenCalledWith(1, ['a', 'b'], window, alice);
-    expect(querySourceResources).toHaveBeenCalledWith(1, ['c'], window, aliceAsViewer);
+    expect(querySourceResources).toHaveBeenCalledWith(planSource, ['a', 'b'], window, alice);
+    expect(querySourceResources).toHaveBeenCalledWith(planSource, ['c'], window, aliceAsViewer);
+  });
+
+  it('keeps a revision read directly apart from a plan source with the same id', async () => {
+    const alice = user('token-a');
+    expect(getSourceQuery({ revisionId: 1 }, alice)).not.toBe(getSourceQuery({ planSourceId: 1 }, alice));
+    getSourceQuery({ revisionId: 1 }, alice)(window, 'a');
+    await vi.advanceTimersByTimeAsync(50);
+    expect(querySourceResources).toHaveBeenCalledWith({ revisionId: 1 }, ['a'], window, alice);
   });
 });

@@ -46,6 +46,8 @@
   export let interpolateHoverValue = false;
   export let limitTooltipToLine = false;
   export let viewTimeRange: TimeRange = { end: 0, start: 0 };
+  /** False off a Plan page: hides what reads the Plan's directives, spans and URL (links, locking, auto scroll). */
+  export let planControls: boolean = true;
 
   let followSelection: boolean = false;
   let pickerMenu: Menu;
@@ -247,17 +249,19 @@
 </script>
 
 <svelte:window on:keydown={onKeydown} />
-<button
-  class="st-button icon toggle-button"
-  class:active={followSelection}
-  on:click={onToggleFollowSelection}
-  use:tooltip={{
-    content: `${followSelection ? 'Disable' : 'Enable'} auto scroll to offscreen selections`,
-    placement: 'bottom',
-  }}
->
-  <AutoScrollIcon />
-</button>
+{#if planControls}
+  <button
+    class="st-button icon toggle-button"
+    class:active={followSelection}
+    on:click={onToggleFollowSelection}
+    use:tooltip={{
+      content: `${followSelection ? 'Disable' : 'Enable'} auto scroll to offscreen selections`,
+      placement: 'bottom',
+    }}
+  >
+    <AutoScrollIcon />
+  </button>
+{/if}
 <button
   class="st-button icon toggle-button"
   class:active={decimate}
@@ -339,31 +343,33 @@
 >
   <RotateCounterClockwiseIcon />
 </button>
-<div class="timeline-icon-tray-divider" />
-<button
-  class="st-button icon"
-  on:click={copyViewToClipboard}
-  use:tooltip={{
-    content: `Copy URL including plan, visible time window, selection, and simulation dataset to clipboard.${
-      $viewIsModified ? ' View has unsaved changes.' : ''
-    }`,
-    placement: 'bottom',
-  }}
->
-  <LinkIcon />
-</button>
-<TimelineLockControl
-  hasUpdatePermission={hasUpdateDirectivePermission}
-  planReadOnly={$planReadOnly}
-  timelineLockStatus={$timelineLockStatus}
-  on:lock={({ detail: lock }) => {
-    $timelineLockStatus = lock;
-  }}
-  on:unlock={({ detail: unlock }) => {
-    $timelineLockStatus = unlock;
-  }}
-  on:click={toggleTimelineLock}
-/>
+{#if planControls}
+  <div class="timeline-icon-tray-divider" />
+  <button
+    class="st-button icon"
+    on:click={copyViewToClipboard}
+    use:tooltip={{
+      content: `Copy URL including plan, visible time window, selection, and simulation dataset to clipboard.${
+        $viewIsModified ? ' View has unsaved changes.' : ''
+      }`,
+      placement: 'bottom',
+    }}
+  >
+    <LinkIcon />
+  </button>
+  <TimelineLockControl
+    hasUpdatePermission={hasUpdateDirectivePermission}
+    planReadOnly={$planReadOnly}
+    timelineLockStatus={$timelineLockStatus}
+    on:lock={({ detail: lock }) => {
+      $timelineLockStatus = lock;
+    }}
+    on:unlock={({ detail: unlock }) => {
+      $timelineLockStatus = unlock;
+    }}
+    on:click={toggleTimelineLock}
+  />
+{/if}
 <div style="position: relative">
   <button
     class="st-button secondary timeline-view-controls-menu--button"
@@ -377,18 +383,20 @@
     <div class="timeline-view-controls-menu">
       <div class="timeline-view-controls-menu--group">
         <div class="st-typography-medium">Actions</div>
-        <Input layout="inline" class="timeline-view-control-menu--input">
-          <label class="st-typography-label" for="autoscroll">
-            <AutoScrollIcon />Auto scroll to selected activity
-          </label>
-          <input
-            checked={followSelection}
-            id="autoscroll"
-            name="autoscroll"
-            on:change={onToggleFollowSelection}
-            type="checkbox"
-          />
-        </Input>
+        {#if planControls}
+          <Input layout="inline" class="timeline-view-control-menu--input">
+            <label class="st-typography-label" for="autoscroll">
+              <AutoScrollIcon />Auto scroll to selected activity
+            </label>
+            <input
+              checked={followSelection}
+              id="autoscroll"
+              name="autoscroll"
+              on:change={onToggleFollowSelection}
+              type="checkbox"
+            />
+          </Input>
+        {/if}
         <Input layout="inline" class="timeline-view-control-menu--input">
           <label class="st-typography-label" for="decimate">
             <DecimateIcon />Decimate data (lossless)
@@ -429,24 +437,26 @@
             type="checkbox"
           />
         </Input>
-        <Input layout="inline" class="timeline-view-control-menu--input">
-          <label class="st-typography-label" for="lockTimeline">
-            <HorizontalDragIcon />Drag and drop to move activities
-          </label>
-          <input
-            use:permissionHandler={{
-              hasPermission: hasUpdateDirectivePermission,
-              permissionError: $planReadOnly
-                ? PlanStatusMessages.READ_ONLY
-                : 'You do not have permission to update this timeline',
-            }}
-            checked={$timelineLockStatus === TimelineLockStatus.Unlocked}
-            id="lockTimeline"
-            name="lockTimeline"
-            on:change={toggleTimelineLock}
-            type="checkbox"
-          />
-        </Input>
+        {#if planControls}
+          <Input layout="inline" class="timeline-view-control-menu--input">
+            <label class="st-typography-label" for="lockTimeline">
+              <HorizontalDragIcon />Drag and drop to move activities
+            </label>
+            <input
+              use:permissionHandler={{
+                hasPermission: hasUpdateDirectivePermission,
+                permissionError: $planReadOnly
+                  ? PlanStatusMessages.READ_ONLY
+                  : 'You do not have permission to update this timeline',
+              }}
+              checked={$timelineLockStatus === TimelineLockStatus.Unlocked}
+              id="lockTimeline"
+              name="lockTimeline"
+              on:change={toggleTimelineLock}
+              type="checkbox"
+            />
+          </Input>
+        {/if}
       </div>
       <div class="timeline-view-controls-menu--group">
         <div class="st-typography-medium">Tooltips</div>
@@ -475,18 +485,20 @@
           />
         </Input>
       </div>
-      <div class="timeline-view-controls-menu--group">
-        <div class="st-typography-medium">Current View</div>
-        <div class="st-typography-body">Includes current plan, time window, selection, and simulation dataset</div>
-        <div class="timeline-view-controls--input">
-          <button
-            use:tooltip={{ content: `Copy to clipboard`, placement: 'top' }}
-            class="st-button icon"
-            on:click={copyViewToClipboard}><Clipboard size={16} /></button
-          >
-          <input readonly class="st-input" value={viewURL?.href} />
+      {#if planControls}
+        <div class="timeline-view-controls-menu--group">
+          <div class="st-typography-medium">Current View</div>
+          <div class="st-typography-body">Includes current plan, time window, selection, and simulation dataset</div>
+          <div class="timeline-view-controls--input">
+            <button
+              use:tooltip={{ content: `Copy to clipboard`, placement: 'top' }}
+              class="st-button icon"
+              on:click={copyViewToClipboard}><Clipboard size={16} /></button
+            >
+            <input readonly class="st-input" value={viewURL?.href} />
+          </div>
         </div>
-      </div>
+      {/if}
     </div>
   </Menu>
 </div>

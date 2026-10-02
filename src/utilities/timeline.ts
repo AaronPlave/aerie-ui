@@ -1152,8 +1152,15 @@ export function generateDiscreteTreeUtil(
   viewTimeRange: TimeRange,
   hasExternalEventsLayer: boolean,
   hasActivityLayer: boolean,
+  /**
+   * Set when a row shows activities of several sources (by source id): spans that carry a source are grouped per
+   * source and type, and the group is labelled with the source, so a type two sources share stays two groups.
+   */
+  spanGroupSourceLabels?: Record<string, string>,
 ): DiscreteTree {
-  const groupedSpans = showSpans && hierarchyMode === 'flat' ? groupBy(spans, 'type') : {};
+  const getSpanGroup = (span: Span) =>
+    spanGroupSourceLabels && span.sourceId ? `${span.sourceId}::${span.type}` : span.type;
+  const groupedSpans = showSpans && hierarchyMode === 'flat' ? groupBy(spans, getSpanGroup) : {};
   const groupedDirectives = showDirectives ? groupBy(directives, 'type') : {};
   const groupByMethodFormatted = `pkey.${groupByMethod}`; // Both event_type_name and source_key are within the pkey field
   const groupedExternalEvents = groupBy(externalEvents, groupByMethodFormatted);
@@ -1169,7 +1176,11 @@ export function generateDiscreteTreeUtil(
         const directiveGroup = groupedDirectives[type];
         const id = type;
         const expanded = getNodeExpanded(id, discreteTreeExpansionMap);
-        const label = type;
+        const groupSource = spanGroup?.[0]?.sourceId;
+        const label =
+          spanGroupSourceLabels && groupSource
+            ? `${spanGroup[0].type} · ${spanGroupSourceLabels[groupSource] ?? groupSource}`
+            : type;
         const children: DiscreteTreeNode['children'] = [];
         const items: DiscreteTreeNode['items'] = [];
         const seenSpans: Record<string, boolean> = {};
