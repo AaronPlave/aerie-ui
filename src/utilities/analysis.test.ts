@@ -87,8 +87,8 @@ function span(id: number, type: string, parent: number | null = null, directiveI
     endMs: 3600000,
     parent_id: parent,
     span_id: id,
-    start_offset: '00:00:00',
     startMs: 0,
+    start_offset: '00:00:00',
     type,
   };
 }

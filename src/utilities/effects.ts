@@ -5306,6 +5306,16 @@ const effects = {
     return data.activities ?? [];
   },
 
+  async getSourceActivity(revisionId: number, id: number, user: User | null): Promise<SourceActivity | null> {
+    try {
+      const data = await reqHasura<SourceActivity>(gql.GET_SOURCE_ACTIVITY, { id, revisionId }, user);
+      return data.activity ?? null;
+    } catch (e) {
+      catchError('log', 'Unable to retrieve activity', e as Error);
+      return null;
+    }
+  },
+
   /** When each activity of a revision is, for counting them over time. */
   async getSourceActivityTimes(revisionId: number, user: User | null): Promise<Pick<Span, 'durationMs' | 'startMs'>[]> {
     const data = await reqHasura<Pick<SourceActivity, 'end_time' | 'start_time'>[]>(
@@ -5317,16 +5327,6 @@ const effects = {
       const startMs = Date.parse(start_time);
       return { durationMs: Date.parse(end_time) - startMs, startMs };
     });
-  },
-
-  async getSourceActivity(revisionId: number, id: number, user: User | null): Promise<SourceActivity | null> {
-    try {
-      const data = await reqHasura<SourceActivity>(gql.GET_SOURCE_ACTIVITY, { id, revisionId }, user);
-      return data.activity ?? null;
-    } catch (e) {
-      catchError('log', 'Unable to retrieve activity', e as Error);
-      return null;
-    }
   },
 
   async getSpan(datasetId: number, spanId: number, user: User | null): Promise<SpanDB | null> {

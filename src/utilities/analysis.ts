@@ -94,8 +94,8 @@ export function importedActivityToSpan(sourceId: TimelineSourceId, activity: Imp
     sourceActivityId: activity.id,
     sourceId,
     span_id: getActivityDrawingId({ activityId: activity.id, sourceId }),
-    start_offset: '',
     startMs,
+    start_offset: '',
     type: activity.type,
   };
 }
@@ -290,16 +290,19 @@ function groupBrowserNodes<T>(
   items: T[],
   getCategory: (item: T) => string | null,
   toNode: (item: T) => SourceBrowserNode,
+  summarize: (members: T[]) => Pick<SourceBrowserNode, 'badge' | 'tooltip'>,
 ): SourceBrowserNode[] {
   const byCategory = new Map<string, T[]>();
   items.forEach(item => {
     const category = getCategory(item) ?? 'Uncategorized';
-    byCategory.set(category, [...(byCategory.get(category) ?? []), item]);
+    const members = byCategory.get(category) ?? [];
+    members.push(item);
+    byCategory.set(category, members);
   });
   return [...byCategory.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([category, members]) => ({
-      badge: `${members.length}`,
+      ...summarize(members),
       children: members.map(toNode),
       id: `${sourceId}/${kind}/category/${category}`,
       kind: 'group',
@@ -314,6 +317,20 @@ function activityItemNode(sourceId: TimelineSourceId, name: string, count: numbe
     id: `${sourceId}/activity/${name}`,
     kind: 'item',
     label: name,
+    tooltip: countLabel(count, 'activity', 'activities'),
+  };
+}
+
+function countLabel(count: number, one: string, many: string): string {
+  return `${count.toLocaleString()} ${count === 1 ? one : many}`;
+}
+
+/** What a group of activity types shows: its activities, with how many types they are of. */
+function summarizeActivityTypes(types: { count: number }[]): Pick<SourceBrowserNode, 'badge' | 'tooltip'> {
+  const activities = types.reduce((total, type) => total + type.count, 0);
+  return {
+    badge: `${activities}`,
+    tooltip: `${countLabel(types.length, 'type', 'types')} · ${countLabel(activities, 'activity', 'activities')}`,
   };
 }
 
@@ -371,11 +388,13 @@ function createImportedRevisionSource(
               .filter(Boolean)
               .join(' · '),
           }),
+          members => ({ badge: `${members.length}`, tooltip: countLabel(members.length, 'resource', 'resources') }),
         ),
         emptyMessage: unavailableReason ?? (input.loading ? 'Loading…' : 'No resources'),
         id: `${sourceId}/resources`,
         kind: 'group',
         label: `Resources (${resources.length})`,
+        tooltip: countLabel(resources.length, 'resource', 'resources'),
       },
       {
         children: groupBrowserNodes(
@@ -384,11 +403,13 @@ function createImportedRevisionSource(
           activityTypes,
           type => type.category,
           type => activityItemNode(sourceId, type.type, type.count),
+          summarizeActivityTypes,
         ),
         emptyMessage: unavailableReason ?? (input.loading ? 'Loading…' : 'No activities'),
         id: `${sourceId}/activities`,
         kind: 'group',
         label: `Activities (${activityTypes.reduce((total, type) => total + type.count, 0)})`,
+        tooltip: summarizeActivityTypes(activityTypes).tooltip,
       },
     ],
     description: revision
@@ -464,6 +485,7 @@ function createSimulationDatasetSource(
         id: `${sourceId}/resources`,
         kind: 'group',
         label: `Resources (${catalog.length})`,
+        tooltip: countLabel(catalog.length, 'resource', 'resources'),
       },
       {
         children: (present ?? []).map(({ count, name }) => activityItemNode(sourceId, name, count)),
@@ -471,6 +493,7 @@ function createSimulationDatasetSource(
         id: `${sourceId}/activities`,
         kind: 'group',
         label: `Simulated Activities (${(present ?? []).reduce((total, type) => total + type.count, 0)})`,
+        tooltip: present ? summarizeActivityTypes(present).tooltip : undefined,
       },
     ],
     description: dataset

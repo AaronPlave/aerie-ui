@@ -66,6 +66,8 @@
         id: `group:${group}`,
         kind: 'group',
         label: group,
+        tooltip:
+          flattened || group === 'Plan' ? undefined : `${sources.length} source${sources.length === 1 ? '' : 's'}`,
       };
     });
   }

@@ -1839,15 +1839,6 @@ const gql = {
     }
   `,
 
-  GET_SOURCE_ACTIVITY_TIMES: `#graphql
-    query GetSourceActivityTimes($revisionId: Int!) {
-      activities: ${Queries.SOURCE_ACTIVITIES}(where: { revision_id: { _eq: $revisionId } }) {
-        end_time
-        start_time
-      }
-    }
-  `,
-
   GET_SOURCE_ACTIVITY: `#graphql
     query GetSourceActivity($revisionId: Int!, $id: Int!) {
       activity: ${Queries.SOURCE_ACTIVITY}(revision_id: $revisionId, id: $id) {
@@ -1862,6 +1853,15 @@ const gql = {
         source_key
         start_time
         type
+      }
+    }
+  `,
+
+  GET_SOURCE_ACTIVITY_TIMES: `#graphql
+    query GetSourceActivityTimes($revisionId: Int!) {
+      activities: ${Queries.SOURCE_ACTIVITIES}(where: { revision_id: { _eq: $revisionId } }) {
+        end_time
+        start_time
       }
     }
   `,

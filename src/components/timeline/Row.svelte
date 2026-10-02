@@ -631,7 +631,10 @@
           if (!request) {
             return;
           }
-          sourceSpans.push(...request.spans);
+          // Appended one by one: spreading hundreds of thousands of spans as arguments overflows the stack.
+          for (const span of request.spans) {
+            sourceSpans.push(span);
+          }
           const { spans: matchingSpans } = applyActivityLayerFilter(
             layer.filter.activity,
             [],
