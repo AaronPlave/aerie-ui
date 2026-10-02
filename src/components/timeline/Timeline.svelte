@@ -395,17 +395,15 @@
 
 <div bind:this={timelineDiv} bind:clientWidth class="timeline" id={`timeline-${timeline?.id}`}>
   <div bind:this={timelineHistogramDiv} class="timeline-time-row">
-    {#if plan}
-      <TimelineTimeDisplay
-        planStartTime={formattedPlanStartTime}
-        planEndTime={formattedPlanEndTime}
-        timeLabel={$plugins.time.primary.label}
-        width={timeline?.marginLeft}
-      />
-    {:else}
-      <!-- Keeps the histogram aligned with the rows' draw area when there are no plan times to show. -->
-      <div class="shrink-0" style:width={`${timeline?.marginLeft ?? 0}px`} />
-    {/if}
+    <!-- The full time range: the plan's, or without a plan, that of all the loaded data. -->
+    <TimelineTimeDisplay
+      planStartTime={formattedPlanStartTime}
+      planEndTime={formattedPlanEndTime}
+      timeLabel={$plugins.time.primary.label}
+      width={timeline?.marginLeft}
+      startTooltip={plan ? 'Plan Start Time' : 'Start of Loaded Data'}
+      endTooltip={plan ? 'Plan End Time' : 'End of Loaded Data'}
+    />
     <div class="timeline-histogram-container">
       <TimelineHistogram
         activityDirectives={activityDirectives || []}

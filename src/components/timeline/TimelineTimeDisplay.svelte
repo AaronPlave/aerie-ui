@@ -5,15 +5,17 @@
   export let planStartTime: string | undefined;
   export let planEndTime: string | undefined;
   export let timeLabel: string = '';
+  export let startTooltip: string = 'Plan Start Time';
+  export let endTooltip: string = 'Plan End Time';
 </script>
 
 <div style:width={`${width ?? 10}px`} class="timeline-time-display">
-  <div use:tooltip={{ content: `Plan Start Time` }} class="timeline-time-display--date st-typography-medium">
+  <div use:tooltip={{ content: startTooltip }} class="timeline-time-display--date st-typography-medium">
     {planStartTime}
     {timeLabel}
   </div>
 
-  <div use:tooltip={{ content: `Plan End Time` }} class="timeline-time-display--date st-typography-medium">
+  <div use:tooltip={{ content: endTooltip }} class="timeline-time-display--date st-typography-medium">
     {planEndTime}
     {timeLabel}
   </div>

@@ -199,6 +199,14 @@ export function getAnalysisActivityOrderBy(direction: 'asc' | 'desc'): Record<st
 }
 
 /**
+ * What rows key a source's subscriptions by while it has no data to serve: null while it loads, the reason once it
+ * is known to be unavailable, so rows replace the "loading" subscription they took first.
+ */
+function getUnavailableKey(unavailableReason: string | undefined): string | null {
+  return unavailableReason ? `unavailable:${unavailableReason}` : null;
+}
+
+/**
  * Rows ordered before `row` under getAnalysisActivityOrderBy(direction): counting them gives `row`'s index, so the
  * table can scroll to an activity selected elsewhere.
  */
@@ -393,7 +401,7 @@ function createImportedRevisionSource(
       hasDirectives: false,
       loading: input.loading,
       present: activityTypes.map(type => ({ count: type.count, name: type.type })),
-      revisionKey: ready ? `source-revision:${revision.id}` : null,
+      revisionKey: ready ? `source-revision:${revision.id}` : getUnavailableKey(unavailableReason),
       subscribe: (request, context) =>
         revision && ready
           ? input.subscribeImportedActivities(binding, revision, request, context)
@@ -404,7 +412,7 @@ function createImportedRevisionSource(
     resources: {
       catalog: resources.map(resource => ({ name: resource.key, schema: resource.schema })),
       loading: input.loading,
-      revisionKey: ready ? `source-revision:${revision.id}` : null,
+      revisionKey: ready ? `source-revision:${revision.id}` : getUnavailableKey(unavailableReason),
       subscribe: (name, context) => {
         const resource = resourcesByKey.get(name);
         if (!revision || !ready || !resource) {
@@ -478,7 +486,7 @@ function createSimulationDatasetSource(
       hasDirectives: false,
       loading: input.loading || !present,
       present: present ?? [],
-      revisionKey: dataset ? `simulation-dataset:${dataset.id}` : null,
+      revisionKey: dataset ? `simulation-dataset:${dataset.id}` : getUnavailableKey(unavailableReason),
       // Simulations are small: every span is loaded once, so hierarchies are complete; rows filter by type.
       subscribe: (_request, context) =>
         dataset && !unavailableReason
@@ -490,7 +498,7 @@ function createSimulationDatasetSource(
     resources: {
       catalog,
       loading: input.loading,
-      revisionKey: dataset ? `simulation-dataset:${dataset.id}` : null,
+      revisionKey: dataset ? `simulation-dataset:${dataset.id}` : getUnavailableKey(unavailableReason),
       subscribe: (name, context) =>
         dataset && !unavailableReason
           ? input.subscribeSimulationProfile(binding, dataset, name, context)
